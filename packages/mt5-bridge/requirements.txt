@@ -1,0 +1,23 @@
+# MetaAPI SDK
+metaapi-cloud-sdk>=27.0.0
+
+# HTTP Client
+httpx>=0.25.0
+aiohttp>=3.9.0
+
+# WebSocket
+websockets>=12.0
+
+# Utils
+python-dotenv>=1.0.0
+pydantic>=2.5.0
+
+# Logging
+structlog>=23.2.0
+
+# Testing
+pytest>=7.4.0
+pytest-asyncio>=0.21.0
+
+# Note: MetaTrader5 package only works on Windows
+# MetaTrader5>=5.0.45  # Uncomment on Windows

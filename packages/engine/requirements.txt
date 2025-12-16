@@ -1,0 +1,34 @@
+# Data handling
+pandas>=2.0.0
+numpy>=1.24.0
+
+# Technical analysis
+ta>=0.10.2
+pandas-ta>=0.3.14b
+
+# Data fetching
+yfinance>=0.2.0
+requests>=2.31.0
+
+# Backtesting
+backtesting>=0.3.3
+
+# Visualization
+matplotlib>=3.7.0
+plotly>=5.15.0
+mplfinance>=0.12.9b7
+
+# Configuration
+python-dotenv>=1.0.0
+pyyaml>=6.0
+
+# Jupyter support (optional)
+jupyter>=1.0.0
+ipykernel>=6.25.0
+
+# Testing
+pytest>=7.4.0
+pytest-cov>=4.1.0
+
+# MT5 Integration (for later phases)
+# MetaTrader5>=5.0.45  # Uncomment when ready for MT5 integration

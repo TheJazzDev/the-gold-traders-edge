@@ -1,0 +1,66 @@
+# Docker Compose for local development
+# Run: docker-compose up -d
+
+version: '3.8'
+
+services:
+  # PostgreSQL Database
+  postgres:
+    image: postgres:15-alpine
+    container_name: gold-signal-db
+    environment:
+      POSTGRES_USER: goldtrader
+      POSTGRES_PASSWORD: localdev123
+      POSTGRES_DB: goldtrader
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U goldtrader"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # Redis Cache
+  redis:
+    image: redis:7-alpine
+    container_name: gold-signal-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # Backend API (uncomment when ready)
+  # api:
+  #   build:
+  #     context: ./packages/api
+  #     dockerfile: Dockerfile
+  #   container_name: gold-signal-api
+  #   ports:
+  #     - "8000:8000"
+  #   environment:
+  #     DATABASE_URL: postgresql://goldtrader:localdev123@postgres:5432/goldtrader
+  #     REDIS_URL: redis://redis:6379
+  #     JWT_SECRET: local-dev-secret-change-in-production
+  #   depends_on:
+  #     postgres:
+  #       condition: service_healthy
+  #     redis:
+  #       condition: service_healthy
+  #   volumes:
+  #     - ./packages/api:/app
+  #   command: uvicorn src.main:app --host 0.0.0.0 --port 8000 --reload
+
+volumes:
+  postgres_data:
+  redis_data:
+
+networks:
+  default:
+    name: gold-signal-network

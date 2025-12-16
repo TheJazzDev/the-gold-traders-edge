@@ -1,0 +1,51 @@
+# Gold Signal Engine Configuration
+# ================================
+
+# Strategy Settings
+strategy:
+  name: "Gold Fib Strategy"
+  version: "1.0.0"
+  
+  # Fibonacci Settings
+  fib_entry_level: 0.786     # 76.8% retracement (or 78.6%)
+  fib_tolerance: 0.02        # 2% tolerance around fib level
+  
+  # Swing Detection
+  swing_lookback: 5          # Candles for swing detection
+  swing_min_strength: 2      # Minimum strength for valid swing
+  
+  # Trend Detection  
+  trend_lookback: 50         # Candles for trend analysis
+  trend_method: "swing"      # Options: swing, ma, linear
+  
+  # Breakout/Retest Settings
+  breakout_lookback: 20      # Candles to define range
+  retest_lookback: 10        # Candles to look for retest
+  retest_tolerance_pct: 0.3  # % tolerance for retest
+
+# Risk Management
+risk:
+  position_size_pct: 2.0     # Risk 2% per trade
+  default_sl_atr_mult: 1.5   # SL = ATR * multiplier
+  default_tp_rr_ratio: 2.0   # Take profit at 2:1 R:R
+  max_open_trades: 1         # Max concurrent trades
+
+# Backtesting Settings
+backtest:
+  initial_balance: 10000
+  commission: 0.0            # Commission per trade
+  slippage: 0.1              # Slippage in price units
+
+# Data Settings
+data:
+  default_timeframe: "4h"
+  primary_symbol: "XAUUSD"
+  data_source: "yfinance"    # Options: yfinance, histdata, local
+
+# Rules Configuration (enable/disable)
+rules:
+  rule_1_fib_retest: true
+  rule_2: false
+  rule_3: false
+  rule_4: false
+  rule_5: false
