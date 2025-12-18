@@ -4,7 +4,8 @@ numpy>=1.24.0
 
 # Technical analysis
 ta>=0.10.2
-pandas-ta-remake>=0.1.0
+pandas-ta @ git+https://github.com/twopirllc/pandas-ta.git
+
 
 # Data fetching
 yfinance>=0.2.0
@@ -32,13 +33,3 @@ pytest-cov>=4.1.0
 
 # MT5 Integration (for later phases)
 # MetaTrader5>=5.0.45  # Uncomment when ready for MT5 integration
-
-# API Backend (Phase 2)
-fastapi>=0.110.0
-uvicorn[standard]>=0.27.0
-pydantic>=2.6.0
-python-jose[cryptography]>=3.3.0
-passlib[bcrypt]>=1.7.4
-python-multipart>=0.0.9
-redis>=5.0.0
-celery>=5.3.0

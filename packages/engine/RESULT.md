@@ -1,0 +1,105 @@
+ ~/Doc/Pr/the-gold-traders-edge/packages/engine | on main !1 ?1  python3 ./run_backtest.py                                                                               1 err | took 31s | to py
+======================================================================
+🥇 THE GOLD TRADER'S EDGE - BACKTEST ENGINE
+======================================================================
+
+📊 Loading Data...
+   Generating sample data (2022-01-01 to 2024-12-01)...
+Generated 4560 synthetic candles from 2022-01-01 to 2024-12-01
+   Date Range: 2022-01-03 00:00:00 to 2024-11-29 20:00:00
+   Total Candles: 4560
+
+🎯 Initializing Strategy...
+
+   Active Rules:
+   ✅ Rule 1: 61.8% Golden Retracement
+   ✅ Rule 2: 78.6% Deep Discount
+   ✅ Rule 3: 23.6% Shallow Pullback
+   ✅ Rule 4: Consolidation Break
+   ✅ Rule 5: ATH Breakout Retest
+   ✅ Rule 6: 50% Momentum
+
+💰 Backtest Settings:
+   Initial Balance: $10,000.00
+   Risk per Trade: 2.0%
+
+🚀 Running Backtest...
+----------------------------------------------------------------------
+Running backtest on 4560 candles...
+Period: 2022-01-03 00:00:00 to 2024-11-29 20:00:00
+
+╔══════════════════════════════════════════════════════════════╗
+║                    BACKTEST RESULTS                          ║
+╠══════════════════════════════════════════════════════════════╣
+║  Period: 2022-01-03 to 2024-11-29
+║
+║  PERFORMANCE
+║  ───────────────────────────────────────────────────────────
+║  Initial Balance:     $10,000.00
+║  Final Balance:       $7,887.23
+║  Net Profit:          $-2,112.77 (-21.13%)
+║
+║  TRADE STATISTICS
+║  ───────────────────────────────────────────────────────────
+║  Total Trades:        22
+║  Winning Trades:      6
+║  Losing Trades:       16
+║  Win Rate:            27.27%
+║
+║  PROFIT METRICS
+║  ───────────────────────────────────────────────────────────
+║  Profit Factor:       0.38
+║  Average Win:         $202.68
+║  Average Loss:        $202.55
+║  Largest Win:         $291.21
+║  Largest Loss:        $-414.18
+║  Average R:R:         1.21
+║
+║  RISK METRICS
+║  ───────────────────────────────────────────────────────────
+║  Max Drawdown:        $2355.92 (23.56%)
+║  Sharpe Ratio:        -7.39
+╚══════════════════════════════════════════════════════════════╝
+
+
+======================================================================
+📋 PERFORMANCE BY RULE
+======================================================================
+
+Rule                             Trades   Win Rate   Profit Factor      Net P&L
+---------------------------------------------------------------------------
+Rule1_618_Golden                      5      40.0%            0.54 $    -424.13
+Rule2_786_DeepDiscount                2       0.0%            0.00 $    -387.63
+Rule4_ConsolidationBreak              1       0.0%            0.00 $    -195.15
+Rule5_ATH_Retest                      9      44.4%            0.75 $    -239.88
+Rule6_50_Momentum                     5       0.0%            0.00 $    -777.98
+---------------------------------------------------------------------------
+
+📝 Last 10 Trades:
+Date                 Rule                         Dir      Entry       Exit          P&L
+-------------------------------------------------------------------------------------
+2022-06-02 08:00:00  Rule5_ATH_Retest           SHORT $   218.22 $   217.64 $      78.30
+2022-06-02 20:00:00  Rule5_ATH_Retest           SHORT $   216.43 $   212.39 $     234.82
+2022-06-08 08:00:00  Rule2_786_DeepDiscount     SHORT $   212.32 $   221.24 $    -190.91
+2022-06-16 08:00:00  Rule1_618_Golden           SHORT $   232.70 $   235.00 $    -225.41
+2022-06-16 12:00:00  Rule1_618_Golden           SHORT $   233.73 $   234.99 $    -284.63
+2022-06-16 16:00:00  Rule1_618_Golden           SHORT $   234.15 $   234.99 $    -414.18
+2022-06-21 00:00:00  Rule5_ATH_Retest            LONG $   243.87 $   245.82 $     155.69
+2022-07-06 04:00:00  Rule5_ATH_Retest            LONG $   326.04 $   324.15 $    -218.41
+2022-07-11 08:00:00  Rule6_50_Momentum           LONG $   292.08 $   274.20 $    -160.67
+2022-07-14 16:00:00  Rule5_ATH_Retest           SHORT $   244.78 $   236.35 $     247.15
+
+======================================================================
+✅ Backtest Complete!
+======================================================================
+
+
+Next Steps
+
+Get Real Data: Download XAUUSD data from HistData.com or Yahoo Finance
+Validate: Run backtests on real data across multiple time periods
+Optimize: Tune parameters in config/default.yaml
+Forward Test: Paper trade the signals before going live
+
+Once you're satisfied with the backtest results on real data, we can move to Phase 2: Backend API to serve signals in real-time.
+Would you like to proceed with getting real data and running more comprehensive tests, or shall we start on the API?

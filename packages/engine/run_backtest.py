@@ -28,7 +28,7 @@ def parse_args():
     parser.add_argument('--end', type=str, default='2024-12-01', help='End date (YYYY-MM-DD)')
     parser.add_argument('--timeframe', type=str, default='4h', help='Timeframe (1h, 4h, 1D)')
     parser.add_argument('--balance', type=float, default=10000, help='Initial balance')
-    parser.add_argument('--risk', type=float, default=2.0, help='Risk per trade (%)')
+    parser.add_argument('--risk', type=float, default=2.0, help='Risk per trade (%%)')
     parser.add_argument('--rules', type=str, help='Comma-separated rule numbers to enable (e.g., 1,2,3)')
     parser.add_argument('--output', type=str, help='Output file for results (JSON)')
     return parser.parse_args()
@@ -43,18 +43,46 @@ def main():
     
     # Load data
     print("\n📊 Loading Data...")
-    
+
+    loader = GoldDataLoader()
+
     if args.data:
-        loader = GoldDataLoader()
+        # User specified a data file
         df = loader.load_from_csv(args.data)
         print(f"   Loaded {len(df)} candles from {args.data}")
     else:
-        print(f"   Generating sample data ({args.start} to {args.end})...")
-        df = generate_sample_data(
-            start_date=args.start,
-            end_date=args.end,
-            timeframe=args.timeframe
-        )
+        # Try to auto-detect real data files
+        processed_dir = Path("data/processed")
+
+        # Look for matching timeframe files
+        if processed_dir.exists():
+            pattern = f"xauusd_{args.timeframe}_*.csv"
+            matching_files = list(processed_dir.glob(pattern))
+
+            if matching_files:
+                # Use the most recent file (sorted by name, which includes year)
+                data_file = sorted(matching_files)[-1]
+                print(f"   Found real data: {data_file.name}")
+                df = loader.load_from_csv(str(data_file))
+                print(f"   Loaded {len(df)} candles from real data")
+            else:
+                print(f"   ⚠️  No real data found for {args.timeframe} timeframe")
+                print(f"   Run: python fetch_real_data.py --timeframe {args.timeframe}")
+                print(f"\n   Falling back to synthetic data...")
+                df = generate_sample_data(
+                    start_date=args.start,
+                    end_date=args.end,
+                    timeframe=args.timeframe
+                )
+        else:
+            print(f"   ⚠️  No real data available")
+            print(f"   Run: python fetch_real_data.py --timeframe {args.timeframe}")
+            print(f"\n   Falling back to synthetic data...")
+            df = generate_sample_data(
+                start_date=args.start,
+                end_date=args.end,
+                timeframe=args.timeframe
+            )
     
     print(f"   Date Range: {df.index[0]} to {df.index[-1]}")
     print(f"   Total Candles: {len(df)}")

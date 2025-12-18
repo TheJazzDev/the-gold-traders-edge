@@ -106,13 +106,14 @@ class GoldStrategy:
         self.df: Optional[pd.DataFrame] = None
         
         # Enable/disable individual rules
+        # Based on backtest analysis: Only keep profitable rules
         self.rules_enabled = {
-            'rule_1_618_retracement': True,
-            'rule_2_786_deep_discount': True,
-            'rule_3_236_shallow_pullback': True,
-            'rule_4_consolidation_break': True,
-            'rule_5_ath_breakout_retest': True,
-            'rule_6_50_momentum': True,
+            'rule_1_618_retracement': True,   # ✅ Good: 44% return, 52.6% win rate
+            'rule_2_786_deep_discount': False,  # ❌ Removed: -33% return, 16% win rate
+            'rule_3_236_shallow_pullback': False,  # ❌ Removed: -6% return, 25% win rate
+            'rule_4_consolidation_break': False,  # ❌ Removed: 0% return, 35% win rate
+            'rule_5_ath_breakout_retest': True,  # ⚠️ Marginal: 30% return, 38% win rate
+            'rule_6_50_momentum': True,  # ⭐ STAR: 293% return, 76% win rate
         }
     
     def set_rule_enabled(self, rule_name: str, enabled: bool):

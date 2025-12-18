@@ -84,48 +84,49 @@ class GoldDataLoader:
         return df
     
     def load_from_csv(
-        self, 
+        self,
         filepath: str,
         date_column: str = 'datetime',
         date_format: Optional[str] = None
     ) -> pd.DataFrame:
         """
         Load gold data from a local CSV file.
-        
+
         Args:
             filepath: Path to CSV file
             date_column: Name of the datetime column
             date_format: Date format string (auto-detected if None)
-        
+
         Returns:
             DataFrame with OHLCV data
         """
         print(f"Loading data from {filepath}...")
-        
+
         df = pd.read_csv(filepath)
-        
-        # Try to identify and parse datetime column
-        possible_date_cols = ['datetime', 'date', 'time', 'timestamp', 'Date', 'DateTime', 'Time']
-        
+
+        # Try to identify and parse datetime column (case-insensitive)
+        possible_date_cols = ['datetime', 'date', 'time', 'timestamp', 'Datetime', 'Date', 'DateTime', 'Time']
+
+        date_col_found = None
         for col in possible_date_cols:
             if col in df.columns:
-                date_column = col
+                date_col_found = col
                 break
-        
-        if date_column in df.columns:
-            df[date_column] = pd.to_datetime(df[date_column], format=date_format)
-            df = df.set_index(date_column)
-        
+
+        if date_col_found:
+            df[date_col_found] = pd.to_datetime(df[date_col_found], format=date_format, utc=True)
+            df = df.set_index(date_col_found)
+
         # Standardize column names
         df.columns = [col.lower() for col in df.columns]
-        
+
         # Rename common variations
         rename_map = {
             'o': 'open', 'h': 'high', 'l': 'low', 'c': 'close', 'v': 'volume',
             'Open': 'open', 'High': 'high', 'Low': 'low', 'Close': 'close', 'Volume': 'volume'
         }
         df = df.rename(columns=rename_map)
-        
+
         print(f"Loaded {len(df)} candles")
         return df
     
