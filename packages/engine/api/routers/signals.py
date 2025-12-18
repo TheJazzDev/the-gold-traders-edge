@@ -2,7 +2,8 @@
 Signals router - Trading signal endpoints.
 """
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, HTTPException, Query, Depends
+from sqlalchemy.orm import Session
 from typing import Optional, List
 from datetime import datetime
 from pydantic import BaseModel
@@ -15,6 +16,9 @@ sys.path.insert(0, str(Path(__file__).parent.parent.parent / 'src'))
 from data.loader import GoldDataLoader
 from signals.gold_strategy import GoldStrategy, create_strategy_function
 from backtesting.engine import BacktestEngine
+
+from ..database.connection import get_db
+from ..services.trade_service import TradeService
 
 router = APIRouter()
 
@@ -83,9 +87,6 @@ async def get_latest_signals(
 
             rule_map = {
                 '1': 'rule_1_618_retracement',
-                '2': 'rule_2_786_deep_discount',
-                '3': 'rule_3_236_shallow_pullback',
-                '4': 'rule_4_consolidation_break',
                 '5': 'rule_5_ath_breakout_retest',
                 '6': 'rule_6_50_momentum',
             }
@@ -147,19 +148,53 @@ async def get_latest_signals(
         raise HTTPException(status_code=500, detail=f"Error generating signals: {str(e)}")
 
 
-@router.get("/history")
+class SignalHistoryItem(BaseModel):
+    """Signal history item model."""
+    id: int
+    rule_name: str
+    direction: str
+    entry_price: float
+    stop_loss: float
+    take_profit: Optional[float]
+    confidence: float
+    signal_time: str
+    timeframe: str
+
+
+@router.get("/history", response_model=List[SignalHistoryItem])
 async def get_signal_history(
     timeframe: str = Query("4h", description="Timeframe: 4h or 1d"),
-    limit: int = Query(100, ge=1, le=1000, description="Number of historical signals")
+    rule_name: Optional[str] = Query(None, description="Filter by rule name"),
+    limit: int = Query(100, ge=1, le=1000, description="Number of historical signals"),
+    db: Session = Depends(get_db)
 ):
     """
     Get historical trading signals.
 
     Returns past signals and their outcomes for analysis.
     """
-    # Placeholder - implement database storage for signal history
-    return {
-        "signals": [],
-        "message": "Signal history tracking will be implemented with database integration",
-        "total": 0
-    }
+    try:
+        service = TradeService(db)
+        signals = service.get_signals(
+            timeframe=timeframe,
+            rule_name=rule_name,
+            limit=limit
+        )
+
+        return [
+            SignalHistoryItem(
+                id=s.id,
+                rule_name=s.rule_name,
+                direction=s.direction.value,
+                entry_price=s.entry_price,
+                stop_loss=s.stop_loss,
+                take_profit=s.take_profit,
+                confidence=s.confidence,
+                signal_time=str(s.signal_time),
+                timeframe=s.timeframe
+            )
+            for s in signals
+        ]
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error retrieving signal history: {str(e)}")

@@ -30,8 +30,9 @@ class Settings(BaseSettings):
     ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 1440  # 24 hours
 
-    # Database (for future implementation)
-    DATABASE_URL: str = "sqlite:///./gold_trader.db"
+    # Database
+    DATABASE_URL: str = "postgresql://goldtrader:localdev123@localhost:5432/goldtrader"
+    DATABASE_ECHO: bool = False  # Set to True for SQL query logging
 
     # Redis (for future implementation)
     REDIS_HOST: str = "localhost"

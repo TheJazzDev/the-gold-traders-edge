@@ -3,11 +3,13 @@ Gold Trader's Edge - FastAPI Backend
 Main application entry point for the trading signals API.
 """
 
+from contextlib import asynccontextmanager
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from datetime import datetime
 import sys
+import logging
 from pathlib import Path
 
 # Add src to path
@@ -15,14 +17,34 @@ sys.path.insert(0, str(Path(__file__).parent.parent / 'src'))
 
 from api.routers import signals, market, analytics
 from api.core.config import settings
+from api.database.connection import init_db, check_db_connection
+
+logger = logging.getLogger(__name__)
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Application lifespan handler - startup and shutdown events."""
+    # Startup
+    logger.info("Starting Gold Trader's Edge API...")
+    try:
+        init_db()
+        logger.info("Database initialized successfully")
+    except Exception as e:
+        logger.warning(f"Database initialization skipped: {e}")
+    yield
+    # Shutdown
+    logger.info("Shutting down Gold Trader's Edge API...")
+
 
 # Create FastAPI app
 app = FastAPI(
     title="Gold Trader's Edge API",
-    description="Real-time gold trading signals based on 6 proven rules",
+    description="Real-time gold trading signals based on 3 proven profitable rules",
     version="1.0.0",
     docs_url="/docs",
-    redoc_url="/redoc"
+    redoc_url="/redoc",
+    lifespan=lifespan
 )
 
 # CORS Configuration
@@ -60,9 +82,11 @@ async def root():
 @app.get("/health")
 async def health_check():
     """Health check endpoint for monitoring."""
+    db_healthy = check_db_connection()
     return {
-        "status": "healthy",
-        "timestamp": datetime.now().isoformat()
+        "status": "healthy" if db_healthy else "degraded",
+        "timestamp": datetime.now().isoformat(),
+        "database": "connected" if db_healthy else "disconnected"
     }
 
 

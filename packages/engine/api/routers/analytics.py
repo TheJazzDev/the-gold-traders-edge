@@ -2,8 +2,9 @@
 Analytics router - Performance analytics endpoints.
 """
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, HTTPException, Query, Depends
 from pydantic import BaseModel
+from sqlalchemy.orm import Session
 from typing import List, Optional
 from datetime import datetime
 import sys
@@ -15,6 +16,9 @@ sys.path.insert(0, str(Path(__file__).parent.parent.parent / 'src'))
 from data.loader import GoldDataLoader
 from signals.gold_strategy import GoldStrategy, create_strategy_function
 from backtesting.engine import BacktestEngine
+
+from ..database.connection import get_db
+from ..services.backtest_service import BacktestService
 
 router = APIRouter()
 
@@ -69,6 +73,26 @@ class TradeDetail(BaseModel):
     pnl: float
     pnl_pct: float
     risk_reward: Optional[float]
+
+
+class BacktestHistoryItem(BaseModel):
+    """Backtest history item model."""
+    id: int
+    timeframe: str
+    rules: str
+    period: str
+    total_return_pct: float
+    win_rate: float
+    total_trades: int
+    created_at: str
+
+
+class SaveBacktestRequest(BaseModel):
+    """Request to save a backtest run."""
+    timeframe: str = "4h"
+    rules: str = "1,5,6"
+    start_date: Optional[str] = None
+    end_date: Optional[str] = None
 
 
 @router.get("/summary", response_model=PerformanceSummary)
@@ -346,3 +370,237 @@ async def get_trade_history(
 
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error retrieving trade history: {str(e)}")
+
+
+@router.post("/backtest/save")
+async def save_backtest_run(
+    request: SaveBacktestRequest,
+    db: Session = Depends(get_db)
+):
+    """
+    Run a backtest and save results to database.
+
+    This persists the backtest run and all trades for historical analysis.
+    """
+    try:
+        # Load data
+        loader = GoldDataLoader()
+        processed_dir = Path("data/processed")
+        pattern = f"xauusd_{request.timeframe}_*.csv"
+        matching_files = list(processed_dir.glob(pattern))
+
+        if not matching_files:
+            raise HTTPException(
+                status_code=404,
+                detail=f"No data available for timeframe {request.timeframe}"
+            )
+
+        data_file = sorted(matching_files)[-1]
+        df = loader.load_from_csv(str(data_file))
+
+        # Initialize strategy
+        strategy = GoldStrategy()
+
+        # Configure rules
+        if request.rules:
+            for rule in strategy.rules_enabled:
+                strategy.rules_enabled[rule] = False
+
+            rule_map = {
+                '1': 'rule_1_618_retracement',
+                '5': 'rule_5_ath_breakout_retest',
+                '6': 'rule_6_50_momentum',
+            }
+
+            for rule_num in request.rules.split(','):
+                rule_num = rule_num.strip()
+                if rule_num in rule_map:
+                    strategy.rules_enabled[rule_map[rule_num]] = True
+
+        # Run backtest
+        engine = BacktestEngine(initial_balance=10000, position_size_pct=2.0)
+        result = engine.run(
+            df=df,
+            strategy_func=create_strategy_function(strategy),
+            start_date=request.start_date,
+            end_date=request.end_date
+        )
+
+        # Calculate return percentage
+        net_profit = result.final_balance - result.initial_balance
+        return_pct = (net_profit / result.initial_balance) * 100
+
+        # Save to database
+        service = BacktestService(db)
+        backtest_run = service.create_backtest_run(
+            timeframe=request.timeframe,
+            rules_used=request.rules,
+            initial_balance=result.initial_balance,
+            risk_per_trade=2.0,
+            start_date=result.start_date,
+            end_date=result.end_date,
+            final_balance=result.final_balance,
+            total_trades=result.total_trades,
+            winning_trades=result.winning_trades,
+            losing_trades=result.losing_trades,
+            win_rate=result.win_rate,
+            profit_factor=result.profit_factor,
+            total_return_pct=return_pct,
+            max_drawdown=result.max_drawdown,
+            max_drawdown_pct=result.max_drawdown_pct,
+            sharpe_ratio=result.sharpe_ratio,
+            avg_win=result.avg_win,
+            avg_loss=abs(result.avg_loss)
+        )
+
+        # Save trades
+        trades_data = []
+        for trade in result.trades:
+            trades_data.append({
+                "rule_name": trade.signal_name,
+                "direction": trade.direction.value,
+                "entry_time": trade.entry_time,
+                "entry_price": trade.entry_price,
+                "stop_loss": trade.stop_loss,
+                "take_profit": trade.take_profit,
+                "position_size": trade.position_size,
+                "exit_time": trade.exit_time,
+                "exit_price": trade.exit_price,
+                "status": trade.status.value,
+                "pnl": trade.pnl,
+                "pnl_percent": (trade.pnl / (trade.entry_price * trade.position_size)) * 100 if trade.entry_price and trade.position_size else 0,
+                "timeframe": request.timeframe
+            })
+
+        service.save_backtest_trades(backtest_run.id, trades_data)
+
+        return {
+            "success": True,
+            "backtest_id": backtest_run.id,
+            "total_return_pct": return_pct,
+            "win_rate": result.win_rate,
+            "total_trades": result.total_trades,
+            "message": f"Backtest saved successfully with {result.total_trades} trades"
+        }
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error saving backtest: {str(e)}")
+
+
+@router.get("/backtest/history", response_model=List[BacktestHistoryItem])
+async def get_backtest_history(
+    timeframe: Optional[str] = Query(None, description="Filter by timeframe"),
+    limit: int = Query(10, ge=1, le=100, description="Number of results"),
+    db: Session = Depends(get_db)
+):
+    """
+    Get historical backtest runs.
+
+    Returns a list of previous backtest runs for comparison.
+    """
+    try:
+        service = BacktestService(db)
+        history = service.get_backtest_history_summary(timeframe=timeframe, limit=limit)
+
+        return [
+            BacktestHistoryItem(
+                id=item["id"],
+                timeframe=item["timeframe"],
+                rules=item["rules"],
+                period=item["period"],
+                total_return_pct=item["total_return_pct"],
+                win_rate=item["win_rate"],
+                total_trades=item["total_trades"],
+                created_at=item["created_at"]
+            )
+            for item in history
+        ]
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error retrieving backtest history: {str(e)}")
+
+
+@router.get("/backtest/{backtest_id}")
+async def get_backtest_details(
+    backtest_id: int,
+    db: Session = Depends(get_db)
+):
+    """
+    Get detailed results for a specific backtest run.
+
+    Returns full metrics and trade list for a saved backtest.
+    """
+    try:
+        service = BacktestService(db)
+        backtest = service.get_backtest_run_by_id(backtest_id)
+
+        if not backtest:
+            raise HTTPException(status_code=404, detail="Backtest not found")
+
+        trades = service.get_backtest_trades(backtest_id)
+
+        return {
+            "id": backtest.id,
+            "timeframe": backtest.timeframe,
+            "rules_used": backtest.rules_used,
+            "period": f"{backtest.start_date.strftime('%Y-%m-%d')} to {backtest.end_date.strftime('%Y-%m-%d')}",
+            "initial_balance": backtest.initial_balance,
+            "final_balance": backtest.final_balance,
+            "total_return_pct": backtest.total_return_pct,
+            "total_trades": backtest.total_trades,
+            "winning_trades": backtest.winning_trades,
+            "losing_trades": backtest.losing_trades,
+            "win_rate": backtest.win_rate,
+            "profit_factor": backtest.profit_factor,
+            "sharpe_ratio": backtest.sharpe_ratio,
+            "max_drawdown": backtest.max_drawdown,
+            "max_drawdown_pct": backtest.max_drawdown_pct,
+            "avg_win": backtest.avg_win,
+            "avg_loss": backtest.avg_loss,
+            "created_at": backtest.created_at.isoformat(),
+            "trades": [
+                {
+                    "id": t.id,
+                    "rule_name": t.rule_name,
+                    "direction": t.direction.value,
+                    "entry_time": str(t.entry_time),
+                    "entry_price": t.entry_price,
+                    "exit_time": str(t.exit_time) if t.exit_time else None,
+                    "exit_price": t.exit_price,
+                    "stop_loss": t.stop_loss,
+                    "take_profit": t.take_profit,
+                    "pnl": t.pnl,
+                    "pnl_percent": t.pnl_percent,
+                    "status": t.status.value
+                }
+                for t in trades
+            ]
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error retrieving backtest details: {str(e)}")
+
+
+@router.delete("/backtest/{backtest_id}")
+async def delete_backtest_run(
+    backtest_id: int,
+    db: Session = Depends(get_db)
+):
+    """
+    Delete a backtest run and its associated trades.
+    """
+    try:
+        service = BacktestService(db)
+        success = service.delete_backtest_run(backtest_id)
+
+        if not success:
+            raise HTTPException(status_code=404, detail="Backtest not found")
+
+        return {"success": True, "message": f"Backtest {backtest_id} deleted successfully"}
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error deleting backtest: {str(e)}")
