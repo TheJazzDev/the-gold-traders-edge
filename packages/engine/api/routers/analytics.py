@@ -18,14 +18,11 @@ from backtesting.engine import BacktestEngine
 
 router = APIRouter()
 
-# Rule name mapping for human-readable names
+# Rule name mapping for human-readable names (only profitable rules)
 RULE_DISPLAY_NAMES = {
-    'rule_1_618_retracement': '61.8% Golden Retracement',
-    'rule_2_786_deep_discount': '78.6% Deep Discount',
-    'rule_3_236_shallow_pullback': '23.6% Shallow Pullback',
-    'rule_4_consolidation_break': 'Consolidation Breakout',
-    'rule_5_ath_breakout_retest': 'ATH Breakout Retest',
-    'rule_6_50_momentum': '50% Momentum',
+    'Rule1_618_Golden': '61.8% Golden Retracement',
+    'Rule5_ATH_Retest': 'ATH Breakout Retest',
+    'Rule6_50_Momentum': '50% Momentum',
 }
 
 
@@ -43,6 +40,8 @@ class PerformanceSummary(BaseModel):
     max_drawdown_pct: float
     avg_win: float
     avg_loss: float
+    start_date: Optional[str] = None
+    end_date: Optional[str] = None
 
 
 class RulePerformance(BaseModel):
@@ -75,12 +74,15 @@ class TradeDetail(BaseModel):
 @router.get("/summary", response_model=PerformanceSummary)
 async def get_performance_summary(
     timeframe: str = Query("4h", description="Timeframe: 4h or 1d"),
-    rules: Optional[str] = Query("1,5,6", description="Comma-separated rule numbers (optimized: 1,5,6)")
+    rules: Optional[str] = Query("1,5,6", description="Comma-separated rule numbers (optimized: 1,5,6)"),
+    start_date: Optional[str] = Query(None, description="Start date (YYYY-MM-DD) for backtest range"),
+    end_date: Optional[str] = Query(None, description="End date (YYYY-MM-DD) for backtest range")
 ):
     """
     Get overall strategy performance summary.
 
     Returns aggregated performance metrics for the trading strategy.
+    Supports date range filtering for backtesting specific periods.
     """
     try:
         # Load data
@@ -108,9 +110,6 @@ async def get_performance_summary(
 
             rule_map = {
                 '1': 'rule_1_618_retracement',
-                '2': 'rule_2_786_deep_discount',
-                '3': 'rule_3_236_shallow_pullback',
-                '4': 'rule_4_consolidation_break',
                 '5': 'rule_5_ath_breakout_retest',
                 '6': 'rule_6_50_momentum',
             }
@@ -120,16 +119,24 @@ async def get_performance_summary(
                 if rule_num in rule_map:
                     strategy.rules_enabled[rule_map[rule_num]] = True
 
-        # Run backtest
+        # Run backtest with date range
         engine = BacktestEngine(initial_balance=10000, position_size_pct=2.0)
-        result = engine.run(df=df, strategy_func=create_strategy_function(strategy))
+        result = engine.run(
+            df=df,
+            strategy_func=create_strategy_function(strategy),
+            start_date=start_date,
+            end_date=end_date
+        )
 
         # Calculate return percentage
         net_profit = result.final_balance - result.initial_balance
         return_pct = (net_profit / result.initial_balance) * 100
 
+        # Determine period description
+        period_str = "custom" if start_date or end_date else "all"
+
         return PerformanceSummary(
-            period="all",
+            period=period_str,
             timeframe=timeframe,
             total_signals=result.total_trades,
             winning_signals=result.winning_trades,
@@ -140,7 +147,9 @@ async def get_performance_summary(
             sharpe_ratio=result.sharpe_ratio,
             max_drawdown_pct=result.max_drawdown_pct,
             avg_win=result.avg_win,
-            avg_loss=abs(result.avg_loss)
+            avg_loss=abs(result.avg_loss),
+            start_date=str(result.start_date.date()) if result.start_date else None,
+            end_date=str(result.end_date.date()) if result.end_date else None
         )
 
     except Exception as e:
@@ -150,12 +159,15 @@ async def get_performance_summary(
 @router.get("/by-rule", response_model=List[RulePerformance])
 async def get_performance_by_rule(
     timeframe: str = Query("4h", description="Timeframe: 4h or 1d"),
-    rules: Optional[str] = Query("1,5,6", description="Comma-separated rule numbers (optimized: 1,5,6)")
+    rules: Optional[str] = Query("1,5,6", description="Comma-separated rule numbers (optimized: 1,5,6)"),
+    start_date: Optional[str] = Query(None, description="Start date (YYYY-MM-DD) for backtest range"),
+    end_date: Optional[str] = Query(None, description="End date (YYYY-MM-DD) for backtest range")
 ):
     """
     Get performance breakdown by individual rules.
 
     Returns performance metrics for each trading rule separately.
+    Supports date range filtering for backtesting specific periods.
     """
     try:
         # Load data
@@ -183,9 +195,6 @@ async def get_performance_by_rule(
 
             rule_map = {
                 '1': 'rule_1_618_retracement',
-                '2': 'rule_2_786_deep_discount',
-                '3': 'rule_3_236_shallow_pullback',
-                '4': 'rule_4_consolidation_break',
                 '5': 'rule_5_ath_breakout_retest',
                 '6': 'rule_6_50_momentum',
             }
@@ -195,9 +204,14 @@ async def get_performance_by_rule(
                 if rule_num in rule_map:
                     strategy.rules_enabled[rule_map[rule_num]] = True
 
-        # Run backtest
+        # Run backtest with date range
         engine = BacktestEngine(initial_balance=10000, position_size_pct=2.0)
-        result = engine.run(df=df, strategy_func=create_strategy_function(strategy))
+        result = engine.run(
+            df=df,
+            strategy_func=create_strategy_function(strategy),
+            start_date=start_date,
+            end_date=end_date
+        )
 
         # Calculate performance by rule
         rule_stats = {}
@@ -249,12 +263,15 @@ async def get_performance_by_rule(
 @router.get("/trades", response_model=List[TradeDetail])
 async def get_trade_history(
     timeframe: str = Query("4h", description="Timeframe: 4h or 1d"),
-    rules: Optional[str] = Query("1,5,6", description="Comma-separated rule numbers (optimized: 1,5,6)")
+    rules: Optional[str] = Query("1,5,6", description="Comma-separated rule numbers (optimized: 1,5,6)"),
+    start_date: Optional[str] = Query(None, description="Start date (YYYY-MM-DD) for backtest range"),
+    end_date: Optional[str] = Query(None, description="End date (YYYY-MM-DD) for backtest range")
 ):
     """
     Get individual trade history with entry, SL, TP details.
 
     Returns all trades executed during the backtest.
+    Supports date range filtering for backtesting specific periods.
     """
     try:
         # Load data
@@ -282,9 +299,6 @@ async def get_trade_history(
 
             rule_map = {
                 '1': 'rule_1_618_retracement',
-                '2': 'rule_2_786_deep_discount',
-                '3': 'rule_3_236_shallow_pullback',
-                '4': 'rule_4_consolidation_break',
                 '5': 'rule_5_ath_breakout_retest',
                 '6': 'rule_6_50_momentum',
             }
@@ -294,9 +308,14 @@ async def get_trade_history(
                 if rule_num in rule_map:
                     strategy.rules_enabled[rule_map[rule_num]] = True
 
-        # Run backtest
+        # Run backtest with date range
         engine = BacktestEngine(initial_balance=10000, position_size_pct=2.0)
-        result = engine.run(df=df, strategy_func=create_strategy_function(strategy))
+        result = engine.run(
+            df=df,
+            strategy_func=create_strategy_function(strategy),
+            start_date=start_date,
+            end_date=end_date
+        )
 
         # Build trade details
         trades = []

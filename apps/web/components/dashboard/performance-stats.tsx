@@ -13,15 +13,15 @@ interface PerformanceStatsProps {
 export function PerformanceStats({ data, loading }: PerformanceStatsProps) {
   if (loading) {
     return (
-      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-        {[...Array(4)].map((_, i) => (
-          <Card key={i} className="animate-pulse">
+      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+        {[...Array(6)].map((_, i) => (
+          <Card key={i} className="animate-pulse bg-slate-800 border-slate-700">
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <div className="h-4 w-20 bg-gray-200 rounded"></div>
+              <div className="h-4 w-20 bg-slate-700 rounded"></div>
             </CardHeader>
             <CardContent>
-              <div className="h-8 w-24 bg-gray-200 rounded mb-2"></div>
-              <div className="h-3 w-16 bg-gray-200 rounded"></div>
+              <div className="h-8 w-24 bg-slate-700 rounded mb-2"></div>
+              <div className="h-3 w-16 bg-slate-700 rounded"></div>
             </CardContent>
           </Card>
         ))}
@@ -89,43 +89,43 @@ export function PerformanceStats({ data, loading }: PerformanceStatsProps) {
         return (
           <Card
             key={stat.title}
-            className="relative overflow-hidden bg-gradient-to-br from-white via-white to-gray-50 border-2 hover:shadow-xl transition-all duration-300 hover:-translate-y-1 animate-fadeInUp"
+            className="relative overflow-hidden bg-gradient-to-br from-slate-800 to-slate-700 border-slate-600 hover:border-slate-500 transition-all duration-300 hover:-translate-y-1 hover:shadow-xl"
             style={{ animationDelay: `${delay}ms` }}
           >
             {/* Gradient overlay for positive metrics */}
             {stat.changeType === 'positive' && (
-              <div className="absolute top-0 right-0 w-32 h-32 bg-gradient-to-br from-green-100/50 to-transparent rounded-bl-full"></div>
+              <div className="absolute top-0 right-0 w-32 h-32 bg-gradient-to-br from-green-500/10 to-transparent rounded-bl-full"></div>
             )}
             {stat.changeType === 'negative' && (
-              <div className="absolute top-0 right-0 w-32 h-32 bg-gradient-to-br from-red-100/50 to-transparent rounded-bl-full"></div>
+              <div className="absolute top-0 right-0 w-32 h-32 bg-gradient-to-br from-red-500/10 to-transparent rounded-bl-full"></div>
             )}
 
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 relative z-10">
-              <CardTitle className="text-sm font-semibold text-gray-700">
+              <CardTitle className="text-sm font-semibold text-slate-400">
                 {stat.title}
               </CardTitle>
-              <div className={`p-2 rounded-full ${
-                stat.changeType === 'positive' ? 'bg-green-100' :
-                stat.changeType === 'negative' ? 'bg-red-100' :
-                'bg-gray-100'
+              <div className={`p-2 rounded-lg ${
+                stat.changeType === 'positive' ? 'bg-green-500/20' :
+                stat.changeType === 'negative' ? 'bg-red-500/20' :
+                'bg-slate-600'
               }`}>
                 <Icon className={`h-4 w-4 ${
-                  stat.changeType === 'positive' ? 'text-green-600' :
-                  stat.changeType === 'negative' ? 'text-red-600' :
-                  'text-gray-600'
+                  stat.changeType === 'positive' ? 'text-green-400' :
+                  stat.changeType === 'negative' ? 'text-red-400' :
+                  'text-slate-400'
                 }`} />
               </div>
             </CardHeader>
             <CardContent className="relative z-10">
-              <div className="text-3xl font-bold text-gray-900 mb-1">{stat.value}</div>
+              <div className="text-3xl font-bold text-white mb-1">{stat.value}</div>
               <p className={`text-sm font-semibold mt-1 ${
-                stat.changeType === 'positive' ? 'text-green-600' :
-                stat.changeType === 'negative' ? 'text-red-600' :
-                'text-gray-600'
+                stat.changeType === 'positive' ? 'text-green-400' :
+                stat.changeType === 'negative' ? 'text-red-400' :
+                'text-slate-400'
               }`}>
                 {stat.change}
               </p>
-              <p className="text-xs text-gray-500 mt-1 font-medium">{stat.description}</p>
+              <p className="text-xs text-slate-500 mt-1 font-medium">{stat.description}</p>
             </CardContent>
           </Card>
         );
