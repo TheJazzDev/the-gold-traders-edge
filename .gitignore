@@ -52,6 +52,7 @@ apps/mobile/ios/build
 # ----- IDE -----
 .idea/
 .vscode/
+.history/
 *.swp
 *.swo
 *~

@@ -178,7 +178,7 @@ class BacktestRun(Base):
     created_at = Column(DateTime, server_default=func.now())
     
     # Additional data (JSON for flexibility)
-    metadata = Column(JSON, nullable=True)
+    extra_data = Column(JSON, nullable=True)
     
     # Relationship to trades
     trades = relationship("Trade", back_populates="backtest_run")

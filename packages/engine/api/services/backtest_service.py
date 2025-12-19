@@ -36,7 +36,7 @@ class BacktestService:
         sharpe_ratio: float,
         avg_win: float,
         avg_loss: float,
-        metadata: Optional[dict] = None
+        extra_data: Optional[dict] = None
     ) -> BacktestRun:
         """Create a new backtest run record."""
         backtest_run = BacktestRun(
@@ -58,7 +58,7 @@ class BacktestService:
             sharpe_ratio=sharpe_ratio,
             avg_win=avg_win,
             avg_loss=avg_loss,
-            metadata=metadata
+            extra_data=extra_data
         )
         self.db.add(backtest_run)
         self.db.commit()
