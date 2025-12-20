@@ -104,8 +104,8 @@ async def get_latest_signals(
         recent_df = df.tail(100).copy()
         strategy_func = create_strategy_function(strategy)
 
-        # Generate signal
-        signal_result = strategy_func(recent_df)
+        # Generate signal (evaluate on the latest candle)
+        signal_result = strategy_func(recent_df, len(recent_df) - 1)
 
         # Extract active signals
         active_signals = []
