@@ -311,7 +311,16 @@ class RealtimeSignalGenerator:
             generator.add_subscriber(save_to_db)
         """
         self.subscribers.append(callback)
-        logger.info(f"Added subscriber: {callback.__name__}")
+
+        # Get subscriber name (handle both functions and class instances)
+        if hasattr(callback, '__name__'):
+            name = callback.__name__
+        elif hasattr(callback, '__class__'):
+            name = callback.__class__.__name__
+        else:
+            name = str(callback)
+
+        logger.info(f"Added subscriber: {name}")
 
     def _publish_signal(self, signal: ValidatedSignal):
         """Publish signal to all subscribers."""
