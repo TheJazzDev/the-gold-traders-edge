@@ -4,49 +4,51 @@ const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 
 const api = axios.create({
   baseURL: API_BASE_URL,
-  timeout: 30000,
+  timeout: 120000, // 2 minutes for backtest operations
 });
 
 // Types
 export interface PerformanceSummary {
-  period: string;
-  timeframe: string;
   total_signals: number;
   winning_signals: number;
   losing_signals: number;
-  win_rate: number;
-  profit_factor: number;
+  total_pnl: number;
   total_return_pct: number;
-  sharpe_ratio: number;
-  max_drawdown_pct: number;
+  win_rate: number;
   avg_win: number;
   avg_loss: number;
-  start_date?: string;
-  end_date?: string;
+  profit_factor: number;
+  max_drawdown: number;
+  max_drawdown_pct: number;
+  sharpe_ratio: number;
+  initial_balance: number;
+  final_balance: number;
 }
 
 export interface RulePerformance {
   name: string;
   total_signals: number;
+  winning_signals: number;
+  losing_signals: number;
   win_rate: number;
-  profit_factor: number;
   net_pnl: number;
-  avg_return: number;
+  avg_pnl: number;
+  profit_factor: number;
 }
 
 export interface TradeDetail {
   id: number;
   signal_name: string;
-  direction: string;
+  direction: 'long' | 'short';
   entry_time: string;
   entry_price: number;
-  exit_time: string | null;
-  exit_price: number | null;
   stop_loss: number;
   take_profit: number | null;
-  status: string;
+  exit_time: string | null;
+  exit_price: number | null;
   pnl: number;
   pnl_pct: number;
+  status: string;
   risk_reward: number | null;
 }
 
@@ -63,58 +65,42 @@ export interface OHLCVResponse {
   symbol: string;
   timeframe: string;
   candles: Candle[];
-}
-
-export interface DateRange {
-  startDate: string;
-  endDate: string;
+  count: number;
 }
 
 // API Functions
 export async function getPerformanceSummary(
-  timeframe: string = '4h',
-  rules: string = '1,5,6',
-  dateRange?: DateRange
+  timeframe: string,
+  rules: string
 ): Promise<PerformanceSummary> {
-  const params: Record<string, string> = { timeframe, rules };
-  if (dateRange) {
-    params.start_date = dateRange.startDate;
-    params.end_date = dateRange.endDate;
-  }
-  const response = await api.get('/v1/analytics/summary', { params });
+  const response = await api.get('/v1/analytics/summary', {
+    params: { timeframe, rules },
+  });
   return response.data;
 }
 
 export async function getRulePerformance(
-  timeframe: string = '4h',
-  rules: string = '1,5,6',
-  dateRange?: DateRange
+  timeframe: string,
+  rules: string
 ): Promise<RulePerformance[]> {
-  const params: Record<string, string> = { timeframe, rules };
-  if (dateRange) {
-    params.start_date = dateRange.startDate;
-    params.end_date = dateRange.endDate;
-  }
-  const response = await api.get('/v1/analytics/by-rule', { params });
+  const response = await api.get('/v1/analytics/by-rule', {
+    params: { timeframe, rules },
+  });
   return response.data;
 }
 
 export async function getTradeHistory(
-  timeframe: string = '4h',
-  rules: string = '1,5,6',
-  dateRange?: DateRange
+  timeframe: string,
+  rules: string
 ): Promise<TradeDetail[]> {
-  const params: Record<string, string> = { timeframe, rules };
-  if (dateRange) {
-    params.start_date = dateRange.startDate;
-    params.end_date = dateRange.endDate;
-  }
-  const response = await api.get('/v1/analytics/trades', { params });
+  const response = await api.get('/v1/analytics/trades', {
+    params: { timeframe, rules },
+  });
   return response.data;
 }
 
 export async function getOHLCV(
-  timeframe: string = '4h',
+  timeframe: string,
   limit: number = 500
 ): Promise<OHLCVResponse> {
   const response = await api.get('/v1/market/ohlcv', {
@@ -123,19 +109,32 @@ export async function getOHLCV(
   return response.data;
 }
 
-export async function getIndicators(timeframe: string = '4h') {
-  const response = await api.get('/v1/market/indicators', {
-    params: { timeframe },
+export async function getLatestSignals(timeframe: string, rules?: string) {
+  const response = await api.get('/v1/signals/latest', {
+    params: { timeframe, rules },
   });
   return response.data;
 }
 
-// Health check
-export async function checkHealth(): Promise<boolean> {
-  try {
-    const response = await api.get('/health');
-    return response.status === 200;
-  } catch {
-    return false;
-  }
+export async function healthCheck() {
+  const response = await api.get('/health');
+  return response.data;
+}
+
+// Combined backtest result type
+export interface CombinedBacktestResult {
+  summary: PerformanceSummary;
+  rules: RulePerformance[];
+  trades: TradeDetail[];
+}
+
+// Run backtest once and get all results
+export async function runBacktest(
+  timeframe: string,
+  rules: string
+): Promise<CombinedBacktestResult> {
+  const response = await api.get('/v1/analytics/backtest', {
+    params: { timeframe, rules },
+  });
+  return response.data;
 }

@@ -15,15 +15,11 @@ export function PerformanceStats({ data, loading }: PerformanceStatsProps) {
     return (
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
         {[...Array(6)].map((_, i) => (
-          <Card key={i} className="animate-pulse">
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <div className="h-4 w-20 bg-gray-200 rounded"></div>
-            </CardHeader>
-            <CardContent>
-              <div className="h-8 w-24 bg-gray-200 rounded mb-2"></div>
-              <div className="h-3 w-16 bg-gray-200 rounded"></div>
-            </CardContent>
-          </Card>
+          <div key={i} className="bg-white/5 rounded-xl p-6 animate-pulse">
+            <div className="h-4 w-20 bg-white/10 rounded mb-4"></div>
+            <div className="h-8 w-24 bg-white/10 rounded mb-2"></div>
+            <div className="h-3 w-16 bg-white/10 rounded"></div>
+          </div>
         ))}
       </div>
     );
@@ -37,6 +33,9 @@ export function PerformanceStats({ data, loading }: PerformanceStatsProps) {
       changeType: data.total_return_pct > 0 ? "positive" : "negative",
       icon: data.total_return_pct > 0 ? TrendingUp : TrendingDown,
       description: `${data.total_signals} total signals`,
+      gradient: data.total_return_pct > 0 ? "from-green-500/20 to-emerald-500/10" : "from-red-500/20 to-rose-500/10",
+      iconBg: data.total_return_pct > 0 ? "bg-green-500/30" : "bg-red-500/30",
+      iconColor: data.total_return_pct > 0 ? "text-green-400" : "text-red-400",
     },
     {
       title: "Win Rate",
@@ -45,6 +44,9 @@ export function PerformanceStats({ data, loading }: PerformanceStatsProps) {
       changeType: data.win_rate > 50 ? "positive" : "negative",
       icon: Target,
       description: "Winning trades",
+      gradient: data.win_rate > 50 ? "from-blue-500/20 to-cyan-500/10" : "from-orange-500/20 to-amber-500/10",
+      iconBg: "bg-blue-500/30",
+      iconColor: "text-blue-400",
     },
     {
       title: "Profit Factor",
@@ -53,6 +55,9 @@ export function PerformanceStats({ data, loading }: PerformanceStatsProps) {
       changeType: data.profit_factor > 1.5 ? "positive" : data.profit_factor > 1 ? "neutral" : "negative",
       icon: BarChart3,
       description: "Risk/Reward ratio",
+      gradient: "from-purple-500/20 to-violet-500/10",
+      iconBg: "bg-purple-500/30",
+      iconColor: "text-purple-400",
     },
     {
       title: "Sharpe Ratio",
@@ -61,6 +66,9 @@ export function PerformanceStats({ data, loading }: PerformanceStatsProps) {
       changeType: data.sharpe_ratio > 3 ? "positive" : "neutral",
       icon: Award,
       description: "Risk-adjusted return",
+      gradient: "from-amber-500/20 to-yellow-500/10",
+      iconBg: "bg-amber-500/30",
+      iconColor: "text-amber-400",
     },
     {
       title: "Avg Win",
@@ -69,6 +77,9 @@ export function PerformanceStats({ data, loading }: PerformanceStatsProps) {
       changeType: "positive",
       icon: DollarSign,
       description: "Per winning trade",
+      gradient: "from-emerald-500/20 to-teal-500/10",
+      iconBg: "bg-emerald-500/30",
+      iconColor: "text-emerald-400",
     },
     {
       title: "Max Drawdown",
@@ -77,6 +88,9 @@ export function PerformanceStats({ data, loading }: PerformanceStatsProps) {
       changeType: data.max_drawdown_pct < 15 ? "positive" : data.max_drawdown_pct < 25 ? "neutral" : "negative",
       icon: TrendingDown,
       description: "Maximum loss",
+      gradient: data.max_drawdown_pct < 15 ? "from-green-500/20 to-emerald-500/10" : "from-red-500/20 to-rose-500/10",
+      iconBg: data.max_drawdown_pct < 15 ? "bg-green-500/30" : "bg-red-500/30",
+      iconColor: data.max_drawdown_pct < 15 ? "text-green-400" : "text-red-400",
     },
   ];
 
@@ -84,50 +98,38 @@ export function PerformanceStats({ data, loading }: PerformanceStatsProps) {
     <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
       {stats.map((stat, index) => {
         const Icon = stat.icon;
-        const delay = index * 100;
 
         return (
-          <Card
+          <div
             key={stat.title}
-            className="relative overflow-hidden hover:shadow-md transition-all duration-300"
-            style={{ animationDelay: `${delay}ms` }}
+            className={`relative overflow-hidden bg-gradient-to-br ${stat.gradient} backdrop-blur-sm rounded-xl border border-white/10 p-6 hover:border-white/20 transition-all duration-300 hover:scale-[1.02] hover:shadow-xl`}
+            style={{ animationDelay: `${index * 100}ms` }}
           >
-            {/* Gradient overlay for positive metrics */}
-            {stat.changeType === 'positive' && (
-              <div className="absolute top-0 right-0 w-24 h-24 bg-gradient-to-br from-green-50 to-transparent rounded-bl-full"></div>
-            )}
-            {stat.changeType === 'negative' && (
-              <div className="absolute top-0 right-0 w-24 h-24 bg-gradient-to-br from-red-50 to-transparent rounded-bl-full"></div>
-            )}
+            {/* Decorative gradient orb */}
+            <div className="absolute -top-10 -right-10 w-24 h-24 bg-white/5 rounded-full blur-2xl"></div>
 
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 relative z-10">
-              <CardTitle className="text-sm font-medium text-gray-600">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-sm font-semibold text-white/70">
                 {stat.title}
-              </CardTitle>
-              <div className={`p-2 rounded-lg ${
-                stat.changeType === 'positive' ? 'bg-green-100' :
-                stat.changeType === 'negative' ? 'bg-red-100' :
-                'bg-gray-100'
-              }`}>
-                <Icon className={`h-4 w-4 ${
-                  stat.changeType === 'positive' ? 'text-green-600' :
-                  stat.changeType === 'negative' ? 'text-red-600' :
-                  'text-gray-600'
-                }`} />
+              </h3>
+              <div className={`p-2.5 rounded-xl ${stat.iconBg}`}>
+                <Icon className={`h-5 w-5 ${stat.iconColor}`} />
               </div>
-            </CardHeader>
-            <CardContent className="relative z-10">
-              <div className="text-3xl font-bold text-gray-900 mb-1">{stat.value}</div>
-              <p className={`text-sm font-medium mt-1 ${
-                stat.changeType === 'positive' ? 'text-green-600' :
-                stat.changeType === 'negative' ? 'text-red-600' :
-                'text-gray-500'
+            </div>
+
+            <div className="text-3xl font-bold text-white mb-2">{stat.value}</div>
+
+            <div className="flex items-center justify-between">
+              <p className={`text-sm font-semibold ${
+                stat.changeType === 'positive' ? 'text-green-400' :
+                stat.changeType === 'negative' ? 'text-red-400' :
+                'text-white/60'
               }`}>
                 {stat.change}
               </p>
-              <p className="text-xs text-gray-400 mt-1">{stat.description}</p>
-            </CardContent>
-          </Card>
+              <p className="text-xs text-white/50 font-medium">{stat.description}</p>
+            </div>
+          </div>
         );
       })}
     </div>

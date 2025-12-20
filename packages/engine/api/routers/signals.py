@@ -48,7 +48,7 @@ class SignalsResponse(BaseModel):
 @router.get("/latest", response_model=SignalsResponse)
 async def get_latest_signals(
     timeframe: str = Query("4h", description="Timeframe: 4h or 1d"),
-    rules: Optional[str] = Query(None, description="Comma-separated rule numbers (e.g., 1,2,5,6)")
+    rules: Optional[str] = Query(None, description="Comma-separated rule names (e.g., momentum,london,fibonacci)")
 ):
     """
     Get the latest trading signals for XAUUSD.
@@ -86,15 +86,23 @@ async def get_latest_signals(
                 strategy.rules_enabled[rule] = False
 
             rule_map = {
-                '1': 'rule_1_618_retracement',
-                '5': 'rule_5_ath_breakout_retest',
-                '6': 'rule_6_50_momentum',
+                # STAR PERFORMER
+                'momentum': 'momentum_equilibrium',
+                'equilibrium': 'momentum_equilibrium',
+                # STRONG PERFORMER
+                'london': 'london_session_breakout',
+                # MARGINAL
+                'fibonacci': 'golden_fibonacci',
+                'golden': 'golden_fibonacci',
+                'orderblock': 'order_block_retest',
+                'ath': 'ath_retest',
+                'bollinger': 'bollinger_squeeze',
             }
 
-            for rule_num in rules.split(','):
-                rule_num = rule_num.strip()
-                if rule_num in rule_map:
-                    strategy.rules_enabled[rule_map[rule_num]] = True
+            for rule_name in rules.split(','):
+                rule_name = rule_name.strip().lower()
+                if rule_name in rule_map:
+                    strategy.rules_enabled[rule_map[rule_name]] = True
 
         # Get the latest candle
         latest_candle = df.iloc[-1]
@@ -105,8 +113,8 @@ async def get_latest_signals(
         recent_df = df.tail(100).copy()
         strategy_func = create_strategy_function(strategy)
 
-        # Generate signal
-        signal_result = strategy_func(recent_df)
+        # Generate signal (evaluate on the latest candle)
+        signal_result = strategy_func(recent_df, len(recent_df) - 1)
 
         # Extract active signals
         active_signals = []

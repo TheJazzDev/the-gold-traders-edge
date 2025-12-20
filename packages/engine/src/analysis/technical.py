@@ -431,17 +431,41 @@ class TechnicalAnalysis:
     def calculate_rsi(self, period: int = 14) -> pd.Series:
         """Calculate Relative Strength Index."""
         delta = self.df['close'].diff()
-        
+
         gain = delta.where(delta > 0, 0)
         loss = (-delta).where(delta < 0, 0)
-        
+
         avg_gain = gain.rolling(window=period).mean()
         avg_loss = loss.rolling(window=period).mean()
-        
+
         rs = avg_gain / avg_loss
         rsi = 100 - (100 / (1 + rs))
-        
+
         return rsi
+
+    def calculate_ema(self, period: int = 20) -> pd.Series:
+        """
+        Calculate Exponential Moving Average.
+
+        Args:
+            period: EMA period
+
+        Returns:
+            Series of EMA values
+        """
+        return self.df['close'].ewm(span=period, adjust=False).mean()
+
+    def calculate_sma(self, period: int = 20) -> pd.Series:
+        """
+        Calculate Simple Moving Average.
+
+        Args:
+            period: SMA period
+
+        Returns:
+            Series of SMA values
+        """
+        return self.df['close'].rolling(window=period).mean()
     
     def get_support_resistance_zones(
         self,
