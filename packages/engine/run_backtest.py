@@ -1,12 +1,22 @@
 #!/usr/bin/env python3
 """
 Gold Strategy Backtest Runner
-Run backtests on the 6 gold trading rules.
+Run backtests on profitable gold trading strategies.
 
 Usage:
-    python run_backtest.py                    # Run with sample data
-    python run_backtest.py --data path.csv    # Run with custom data
-    python run_backtest.py --rules 1,2,3      # Run specific rules only
+    python run_backtest.py                              # Run default (momentum + london)
+    python run_backtest.py --data path.csv              # Run with custom data
+    python run_backtest.py --rules momentum             # Test Momentum Equilibrium only
+    python run_backtest.py --rules momentum,london      # Test multiple strategies
+    python run_backtest.py --rules fibonacci,orderblock # Test marginal strategies
+
+Available strategies:
+    momentum, equilibrium     - Momentum Equilibrium (74% win rate) ⭐ STAR PERFORMER
+    london                    - London Session Breakout (58.8% win rate)
+    fibonacci, golden         - Golden Fibonacci 61.8% (49% win rate)
+    orderblock                - Order Block Retest (38.6% win rate)
+    ath                       - ATH/ATL Retest (barely profitable)
+    bollinger                 - Bollinger Squeeze (barely profitable)
 """
 
 import argparse
@@ -29,7 +39,7 @@ def parse_args():
     parser.add_argument('--timeframe', type=str, default='4h', help='Timeframe (1h, 4h, 1D)')
     parser.add_argument('--balance', type=float, default=10000, help='Initial balance')
     parser.add_argument('--risk', type=float, default=2.0, help='Risk per trade (%%)')
-    parser.add_argument('--rules', type=str, help='Comma-separated rule numbers to enable (e.g., 1,2,3)')
+    parser.add_argument('--rules', type=str, help='Comma-separated rule names (e.g., momentum,london,fibonacci)')
     parser.add_argument('--output', type=str, help='Output file for results (JSON)')
     return parser.parse_args()
 
@@ -97,39 +107,34 @@ def main():
         for rule in strategy.rules_enabled:
             strategy.rules_enabled[rule] = False
         
-        # Enable specified rules
+        # Enable specified rules by name
         rule_map = {
-            # Original 3 profitable rules
-            '1': 'golden_retracement',
-            '5': 'ath_breakout_retest',
-            '6': 'momentum_50',
-            # New 6 rules to be tested
-            '7': 'rsi_divergence',
-            '8': 'ema_crossover',
-            '9': 'london_breakout',
-            '10': 'order_block',
-            '11': 'vwap_deviation',
-            '12': 'bollinger_squeeze',
+            # STAR PERFORMER
+            'momentum': 'momentum_equilibrium',
+            'equilibrium': 'momentum_equilibrium',
+            # STRONG PERFORMER
+            'london': 'london_session_breakout',
+            # MARGINAL (disabled by default)
+            'fibonacci': 'golden_fibonacci',
+            'golden': 'golden_fibonacci',
+            'orderblock': 'order_block_retest',
+            'ath': 'ath_retest',
+            'bollinger': 'bollinger_squeeze',
         }
 
-        for rule_num in args.rules.split(','):
-            rule_num = rule_num.strip()
-            if rule_num in rule_map:
-                strategy.rules_enabled[rule_map[rule_num]] = True
+        for rule_name in args.rules.split(','):
+            rule_name = rule_name.strip().lower()
+            if rule_name in rule_map:
+                strategy.rules_enabled[rule_map[rule_name]] = True
 
     print("\n   Active Rules:")
     rule_names = {
-        # Original 3 profitable rules
-        'golden_retracement': 'Rule 1: 61.8% Golden Retracement',
-        'ath_breakout_retest': 'Rule 5: ATH Breakout Retest',
-        'momentum_50': 'Rule 6: 50% Momentum',
-        # New 6 rules to be tested
-        'rsi_divergence': 'Rule 7: RSI Divergence',
-        'ema_crossover': 'Rule 8: EMA 9/21 Crossover',
-        'london_breakout': 'Rule 9: London Session Breakout',
-        'order_block': 'Rule 10: Order Block Retest',
-        'vwap_deviation': 'Rule 11: VWAP Deviation',
-        'bollinger_squeeze': 'Rule 12: Bollinger Band Squeeze',
+        'momentum_equilibrium': 'Momentum Equilibrium (50% Fib) ⭐',
+        'london_session_breakout': 'London Session Breakout',
+        'golden_fibonacci': 'Golden Fibonacci (61.8%)',
+        'order_block_retest': 'Order Block Retest',
+        'ath_retest': 'ATH/ATL Retest',
+        'bollinger_squeeze': 'Bollinger Band Squeeze',
     }
     
     for rule, enabled in strategy.rules_enabled.items():

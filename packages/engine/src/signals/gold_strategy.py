@@ -120,25 +120,24 @@ class GoldStrategy:
         self.ta: Optional[TechnicalAnalysis] = None
         self.df: Optional[pd.DataFrame] = None
 
-        # Enable/disable individual rules - using descriptive names
-        # Based on backtesting results (see RULE_TESTING_RESULTS.md)
+        # Enable/disable individual rules
+        # Only profitable strategies validated on 2023-2025 XAUUSD data
         self.rules_enabled = {
-            # TIER 1: Highly Profitable (PRODUCTION READY)
-            'momentum_50': True,           # Rule 6: 74% win rate, 3.31 PF, $21K profit - STAR PERFORMER
+            # STAR PERFORMER: 74% win rate, 3.31 profit factor, $21K profit
+            'momentum_equilibrium': True,
 
-            # TIER 2: Profitable (Good but not essential)
-            'london_breakout': True,       # Rule 9: 58.8% win rate, 2.74 PF, $2.6K profit
-            'golden_retracement': False,   # Rule 1: 49.1% win rate, 1.31 PF, $2.2K profit - MARGINAL
-            'order_block': False,          # Rule 10: 38.6% win rate, 1.14 PF, $2.1K profit - MARGINAL
+            # STRONG: 58.8% win rate, 2.74 profit factor, $2.6K profit
+            'london_session_breakout': True,
 
-            # TIER 3: Barely Profitable (Not recommended)
-            'ath_breakout_retest': False,  # Rule 5: 38.3% win rate, 1.06 PF, $287 profit - BARELY
-            'bollinger_squeeze': False,    # Rule 12: 31.2% win rate, 1.07 PF, $87 profit - BARELY
+            # MARGINAL: 49.1% win rate, 1.31 profit factor - disabled by default
+            'golden_fibonacci': False,
 
-            # TIER 4: UNPROFITABLE (DISABLED - lose money)
-            'rsi_divergence': False,       # Rule 7: 30.4% win rate, 0.67 PF, -$7.7K loss - TERRIBLE
-            'ema_crossover': False,        # Rule 8: 34.1% win rate, 0.91 PF, -$1.3K loss - BAD
-            'vwap_deviation': False,       # Rule 11: 15.0% win rate, 0.39 PF, -$1.9K loss - TERRIBLE
+            # MARGINAL: 38.6% win rate, 1.14 profit factor - disabled by default
+            'order_block_retest': False,
+
+            # BARELY PROFITABLE: disabled by default
+            'ath_retest': False,
+            'bollinger_squeeze': False,
         }
 
     def set_rule_enabled(self, rule_name: str, enabled: bool):
@@ -160,43 +159,28 @@ class GoldStrategy:
         # Evaluate each enabled rule
         results = []
 
-        if self.rules_enabled.get('golden_retracement'):
-            result = self._golden_retracement(df, current_idx)
+        if self.rules_enabled.get('momentum_equilibrium'):
+            result = self._momentum_equilibrium(df, current_idx)
             if result.triggered:
                 results.append(result)
 
-        if self.rules_enabled.get('ath_breakout_retest'):
-            result = self._ath_breakout_retest(df, current_idx)
+        if self.rules_enabled.get('london_session_breakout'):
+            result = self._london_session_breakout(df, current_idx)
             if result.triggered:
                 results.append(result)
 
-        if self.rules_enabled.get('momentum_50'):
-            result = self._momentum_50(df, current_idx)
+        if self.rules_enabled.get('golden_fibonacci'):
+            result = self._golden_fibonacci(df, current_idx)
             if result.triggered:
                 results.append(result)
 
-        if self.rules_enabled.get('rsi_divergence'):
-            result = self._rsi_divergence(df, current_idx)
+        if self.rules_enabled.get('order_block_retest'):
+            result = self._order_block_retest(df, current_idx)
             if result.triggered:
                 results.append(result)
 
-        if self.rules_enabled.get('ema_crossover'):
-            result = self._ema_crossover(df, current_idx)
-            if result.triggered:
-                results.append(result)
-
-        if self.rules_enabled.get('london_breakout'):
-            result = self._london_breakout(df, current_idx)
-            if result.triggered:
-                results.append(result)
-
-        if self.rules_enabled.get('order_block'):
-            result = self._order_block(df, current_idx)
-            if result.triggered:
-                results.append(result)
-
-        if self.rules_enabled.get('vwap_deviation'):
-            result = self._vwap_deviation(df, current_idx)
+        if self.rules_enabled.get('ath_retest'):
+            result = self._ath_retest(df, current_idx)
             if result.triggered:
                 results.append(result)
 
@@ -405,53 +389,6 @@ class GoldStrategy:
 
         return None
 
-    def _calculate_vwap(self, df: pd.DataFrame, idx: int, lookback: int = 20) -> float:
-        """Calculate Volume Weighted Average Price."""
-        start_idx = max(0, idx - lookback)
-        window = df.iloc[start_idx:idx + 1]
-
-        typical_price = (window['high'] + window['low'] + window['close']) / 3
-
-        if 'volume' in window.columns and window['volume'].sum() > 0:
-            vwap = (typical_price * window['volume']).sum() / window['volume'].sum()
-        else:
-            vwap = typical_price.mean()
-
-        return vwap
-
-    def _detect_rsi_divergence(self, df: pd.DataFrame, idx: int, lookback: int = 14) -> Optional[str]:
-        """Detect RSI divergence with price."""
-        if idx < lookback + 5:
-            return None
-
-        rsi = self.ta.calculate_rsi(period=self.config['rsi_period'])
-
-        # Find local highs and lows in price and RSI
-        price_highs = []
-        price_lows = []
-
-        for i in range(idx - lookback, idx - 2):
-            if df['high'].iloc[i] > df['high'].iloc[i-1] and df['high'].iloc[i] > df['high'].iloc[i+1]:
-                price_highs.append((i, df['high'].iloc[i], rsi.iloc[i]))
-            if df['low'].iloc[i] < df['low'].iloc[i-1] and df['low'].iloc[i] < df['low'].iloc[i+1]:
-                price_lows.append((i, df['low'].iloc[i], rsi.iloc[i]))
-
-        # Check for bullish divergence (price lower low, RSI higher low)
-        if len(price_lows) >= 2:
-            last_low = price_lows[-1]
-            prev_low = price_lows[-2]
-            if last_low[1] < prev_low[1] and last_low[2] > prev_low[2]:
-                return "bullish_divergence"
-
-        # Check for bearish divergence (price higher high, RSI lower high)
-        if len(price_highs) >= 2:
-            last_high = price_highs[-1]
-            prev_high = price_highs[-2]
-            if last_high[1] > prev_high[1] and last_high[2] < prev_high[2]:
-                return "bearish_divergence"
-
-        return None
-
     def _detect_order_block(self, df: pd.DataFrame, idx: int, lookback: int = 20) -> Optional[Dict]:
         """Detect order blocks (institutional entry zones)."""
         if idx < lookback + 5:
@@ -499,12 +436,12 @@ class GoldStrategy:
 
     # ==================== ORIGINAL TRADING RULES ====================
 
-    def _golden_retracement(self, df: pd.DataFrame, idx: int) -> RuleResult:
+    def _golden_fibonacci(self, df: pd.DataFrame, idx: int) -> RuleResult:
         """
-        Golden Retracement (61.8%)
-        Price retraces to the golden ratio Fibonacci level.
+        Golden Fibonacci (61.8% Retracement)
+        Price retraces to the golden ratio Fibonacci level in trending market.
         """
-        result = RuleResult(rule_name="Rule1_618_Golden", triggered=False)
+        result = RuleResult(rule_name="Golden Fibonacci", triggered=False)
 
         fib = self._get_fib_zones(df, idx)
         if fib is None:
@@ -569,12 +506,12 @@ class GoldStrategy:
 
         return result
 
-    def _ath_breakout_retest(self, df: pd.DataFrame, idx: int) -> RuleResult:
+    def _ath_retest(self, df: pd.DataFrame, idx: int) -> RuleResult:
         """
-        ATH Breakout Retest
-        Retest of all-time high as support after breakout.
+        ATH/ATL Retest
+        Retest of all-time high/low as support/resistance after breakout.
         """
-        result = RuleResult(rule_name="Rule5_ATH_Retest", triggered=False)
+        result = RuleResult(rule_name="ATH Retest", triggered=False)
 
         lookback = 100
         if idx < lookback:
@@ -645,12 +582,13 @@ class GoldStrategy:
 
         return result
 
-    def _momentum_50(self, df: pd.DataFrame, idx: int) -> RuleResult:
+    def _momentum_equilibrium(self, df: pd.DataFrame, idx: int) -> RuleResult:
         """
-        50% Momentum
-        Equilibrium entry in strong momentum at 50% retracement.
+        Momentum Equilibrium (50% Retracement)
+        Entry at equilibrium (50% Fibonacci) during strong momentum moves.
+        Win Rate: 74% | Profit Factor: 3.31 | Best performing strategy
         """
-        result = RuleResult(rule_name="Rule6_50_Momentum", triggered=False)
+        result = RuleResult(rule_name="Momentum Equilibrium", triggered=False)
 
         momentum = self._get_momentum_strength(df, idx, lookback=10)
         if momentum == MomentumStrength.WEAK:
@@ -710,138 +648,13 @@ class GoldStrategy:
 
     # ==================== NEW TRADING RULES ====================
 
-    def _rsi_divergence(self, df: pd.DataFrame, idx: int) -> RuleResult:
-        """
-        RSI Divergence
-        Bullish/bearish divergence between price and RSI indicator.
-        """
-        result = RuleResult(rule_name="Rule7_RSI_Divergence", triggered=False)
-
-        divergence = self._detect_rsi_divergence(df, idx)
-        if divergence is None:
-            return result
-
-        current = df.iloc[idx]
-        atr = self.ta.calculate_atr(period=self.config['atr_period']).iloc[-1]
-        rsi = self.ta.calculate_rsi(period=self.config['rsi_period']).iloc[-1]
-
-        # Confirm with RSI levels
-        if divergence == "bullish_divergence":
-            if rsi > 50:  # RSI should be recovering
-                return result
-
-            direction = TradeDirection.LONG
-            entry_price = current['close']
-            stop_loss = current['low'] - (atr * self.config['sl_buffer_atr'])
-            risk = entry_price - stop_loss
-            take_profit = entry_price + (risk * self.config['default_rr_ratio'])
-
-        elif divergence == "bearish_divergence":
-            if rsi < 50:
-                return result
-
-            direction = TradeDirection.SHORT
-            entry_price = current['close']
-            stop_loss = current['high'] + (atr * self.config['sl_buffer_atr'])
-            risk = stop_loss - entry_price
-            take_profit = entry_price - (risk * self.config['default_rr_ratio'])
-        else:
-            return result
-
-        pattern = self._detect_reversal_pattern(df, idx)
-
-        confidence = 0.6
-        if pattern:
-            confidence += 0.15
-        if rsi < 30 or rsi > 70:
-            confidence += 0.1
-
-        result.triggered = True
-        result.direction = direction
-        result.entry_price = entry_price
-        result.stop_loss = stop_loss
-        result.take_profit = take_profit
-        result.confidence = min(confidence, 1.0)
-        result.notes = f"{divergence} detected, RSI: {rsi:.1f}"
-
-        return result
-
-    def _ema_crossover(self, df: pd.DataFrame, idx: int) -> RuleResult:
-        """
-        EMA Crossover (9/21)
-        Fast EMA crosses slow EMA with trend confirmation.
-        """
-        result = RuleResult(rule_name="Rule8_EMA_Crossover", triggered=False)
-
-        if idx < self.config['ema_slow'] + 5:
-            return result
-
-        ema_fast = self.ta.calculate_ema(period=self.config['ema_fast'])
-        ema_slow = self.ta.calculate_ema(period=self.config['ema_slow'])
-
-        current_fast = ema_fast.iloc[-1]
-        current_slow = ema_slow.iloc[-1]
-        prev_fast = ema_fast.iloc[-2]
-        prev_slow = ema_slow.iloc[-2]
-
-        # Detect crossover
-        bullish_cross = prev_fast <= prev_slow and current_fast > current_slow
-        bearish_cross = prev_fast >= prev_slow and current_fast < current_slow
-
-        if not bullish_cross and not bearish_cross:
-            return result
-
-        current = df.iloc[idx]
-        atr = self.ta.calculate_atr(period=self.config['atr_period']).iloc[-1]
-        trend = self.ta.detect_trend(lookback=self.config['trend_lookback'])
-
-        if bullish_cross:
-            # Prefer bullish cross in uptrend or neutral
-            if trend == TrendDirection.DOWNTREND:
-                confidence_penalty = 0.15
-            else:
-                confidence_penalty = 0
-
-            direction = TradeDirection.LONG
-            entry_price = current['close']
-            stop_loss = min(current['low'], current_slow) - (atr * self.config['sl_buffer_atr'])
-            risk = entry_price - stop_loss
-            take_profit = entry_price + (risk * self.config['default_rr_ratio'])
-        else:
-            if trend == TrendDirection.UPTREND:
-                confidence_penalty = 0.15
-            else:
-                confidence_penalty = 0
-
-            direction = TradeDirection.SHORT
-            entry_price = current['close']
-            stop_loss = max(current['high'], current_slow) + (atr * self.config['sl_buffer_atr'])
-            risk = stop_loss - entry_price
-            take_profit = entry_price - (risk * self.config['default_rr_ratio'])
-
-        confidence = 0.55 - confidence_penalty
-
-        # Add confidence if EMAs are diverging (strong crossover)
-        ema_spread = abs(current_fast - current_slow) / current_slow
-        if ema_spread > 0.002:  # 0.2% spread
-            confidence += 0.1
-
-        result.triggered = True
-        result.direction = direction
-        result.entry_price = entry_price
-        result.stop_loss = stop_loss
-        result.take_profit = take_profit
-        result.confidence = min(max(confidence, 0.3), 1.0)
-        result.notes = f"EMA {self.config['ema_fast']}/{self.config['ema_slow']} {'bullish' if bullish_cross else 'bearish'} crossover"
-
-        return result
-
-    def _london_breakout(self, df: pd.DataFrame, idx: int) -> RuleResult:
+    def _london_session_breakout(self, df: pd.DataFrame, idx: int) -> RuleResult:
         """
         London Session Breakout
-        Breakout of Asian session range during London open.
+        Breakout of Asian session range during London market open (7-9 UTC).
+        Win Rate: 58.8% | Profit Factor: 2.74 | Strong performer
         """
-        result = RuleResult(rule_name="Rule9_London_Breakout", triggered=False)
+        result = RuleResult(rule_name="London Session Breakout", triggered=False)
 
         if idx < 20:
             return result
@@ -911,12 +724,13 @@ class GoldStrategy:
 
         return result
 
-    def _order_block(self, df: pd.DataFrame, idx: int) -> RuleResult:
+    def _order_block_retest(self, df: pd.DataFrame, idx: int) -> RuleResult:
         """
         Order Block Retest
-        Smart money concept - institutional entry zone retest.
+        Smart money concept - retest of institutional entry zones.
+        Win Rate: 38.6% | Profit Factor: 1.14 | Marginal
         """
-        result = RuleResult(rule_name="Rule10_Order_Block", triggered=False)
+        result = RuleResult(rule_name="Order Block Retest", triggered=False)
 
         ob = self._detect_order_block(df, idx)
         if ob is None:
@@ -968,73 +782,13 @@ class GoldStrategy:
 
         return result
 
-    def _vwap_deviation(self, df: pd.DataFrame, idx: int) -> RuleResult:
-        """
-        VWAP Deviation
-        Mean reversion when price deviates 2+ ATR from VWAP.
-        """
-        result = RuleResult(rule_name="Rule11_VWAP_Deviation", triggered=False)
-
-        if idx < 30:
-            return result
-
-        vwap = self._calculate_vwap(df, idx)
-        current = df.iloc[idx]
-        atr = self.ta.calculate_atr(period=self.config['atr_period']).iloc[-1]
-
-        deviation = current['close'] - vwap
-        deviation_atr = abs(deviation) / atr
-
-        # Require significant deviation (2+ ATR)
-        if deviation_atr < 2.0:
-            return result
-
-        # Look for reversal pattern
-        pattern = self._detect_reversal_pattern(df, idx)
-        if pattern is None:
-            return result
-
-        if deviation > 0:  # Price above VWAP - look for short
-            if 'bullish' in pattern:
-                return result
-
-            direction = TradeDirection.SHORT
-            entry_price = current['close']
-            stop_loss = current['high'] + (atr * self.config['sl_buffer_atr'])
-            risk = stop_loss - entry_price
-            take_profit = vwap  # Target VWAP
-        else:  # Price below VWAP - look for long
-            if 'bearish' in pattern:
-                return result
-
-            direction = TradeDirection.LONG
-            entry_price = current['close']
-            stop_loss = current['low'] - (atr * self.config['sl_buffer_atr'])
-            risk = entry_price - stop_loss
-            take_profit = vwap  # Target VWAP
-
-        confidence = 0.5
-        if deviation_atr >= 3.0:
-            confidence += 0.15
-        if pattern:
-            confidence += 0.15
-
-        result.triggered = True
-        result.direction = direction
-        result.entry_price = entry_price
-        result.stop_loss = stop_loss
-        result.take_profit = take_profit
-        result.confidence = min(confidence, 1.0)
-        result.notes = f"VWAP deviation: {deviation_atr:.1f} ATR, pattern: {pattern}"
-
-        return result
-
     def _bollinger_squeeze(self, df: pd.DataFrame, idx: int) -> RuleResult:
         """
         Bollinger Band Squeeze
-        Low volatility squeeze followed by explosive breakout.
+        Low volatility compression followed by explosive breakout.
+        Win Rate: 31.2% | Profit Factor: 1.07 | Barely profitable
         """
-        result = RuleResult(rule_name="Rule12_Bollinger_Squeeze", triggered=False)
+        result = RuleResult(rule_name="Bollinger Squeeze", triggered=False)
 
         if idx < self.config['bb_period'] + 10:
             return result
