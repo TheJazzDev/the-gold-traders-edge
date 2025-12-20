@@ -43,7 +43,6 @@ export function RuleSelector({
       <div className='grid sm:grid-cols-2 lg:grid-cols-3 gap-3'>
         {ALL_RULES.map((rule) => {
           const isSelected = selectedRules.includes(rule.id);
-          const isProfitable = PROFITABLE_RULES.includes(rule.id as any);
 
           return (
             <label
@@ -81,22 +80,30 @@ export function RuleSelector({
                 )}
               </div>
               <div className='flex-1 min-w-0'>
-                <div className='flex items-center gap-2'>
+                <div className='flex items-center gap-2 flex-wrap'>
                   <span
                     className={`text-sm font-semibold ${
                       isSelected ? 'text-amber-300' : 'text-white/80'
                     }`}>
-                    Rule {rule.id}
+                    {rule.name}
                   </span>
-                  {isProfitable && (
+                  {rule.isProfitable && (
                     <span className='text-xs px-1.5 py-0.5 bg-green-500/30 text-green-300 rounded-full'>
                       ✓ Profitable
                     </span>
                   )}
-                  {rule.id === '6' && <span className='text-xs'>⭐</span>}
+                  {rule.isNew && (
+                    <span className='text-xs px-1.5 py-0.5 bg-blue-500/30 text-blue-300 rounded-full'>
+                      NEW
+                    </span>
+                  )}
+                  {rule.id === 'momentum_50' && <span className='text-xs'>⭐</span>}
                 </div>
-                <p className='text-xs text-white/60 truncate mt-0.5'>
-                  {rule.name}
+                <p className='text-xs text-white/60 mt-0.5'>
+                  {rule.description}
+                </p>
+                <p className='text-xs text-white/40 mt-0.5'>
+                  {rule.performance}
                 </p>
               </div>
             </label>
