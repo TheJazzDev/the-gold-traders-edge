@@ -1,10 +1,12 @@
 import { ALL_RULES, TIMEFRAMES } from '@/lib/constants';
+import { type RulePerformance } from '@/lib/api';
 
 interface InfoCardsProps {
   selectedRules: string[];
   timeframe: string;
   lastUpdate: Date | null;
   error: string | null;
+  rulePerformance?: RulePerformance[];
 }
 
 export function InfoCards({
@@ -12,7 +14,22 @@ export function InfoCards({
   timeframe,
   lastUpdate,
   error,
+  rulePerformance = [],
 }: InfoCardsProps) {
+  // Create a map of rule performance by name for quick lookup
+  const performanceMap = new Map(
+    rulePerformance.map((rp) => [rp.name.toLowerCase().replace(/\s+/g, '_'), rp])
+  );
+
+  // Helper to get actual performance text
+  const getPerformanceText = (ruleId: string, staticPerformance: string) => {
+    const perf = performanceMap.get(ruleId);
+    if (perf) {
+      const returnPct = ((perf.net_pnl / 10000) * 100).toFixed(0); // Assuming 10k initial
+      return `${returnPct}% return, ${perf.win_rate.toFixed(1)}% win rate`;
+    }
+    return staticPerformance;
+  };
   return (
     <div className='grid md:grid-cols-2 gap-4 sm:gap-6 mt-8'>
       {/* Trading Rules Guide */}
@@ -47,7 +64,7 @@ export function InfoCards({
                   {rule.name}
                 </span>
                 <p className='text-xs text-white/40 mt-0.5'>
-                  {rule.performance}
+                  {getPerformanceText(rule.id, rule.performance)}
                 </p>
               </div>
             </li>
@@ -81,7 +98,7 @@ export function InfoCards({
           <div className='flex items-center justify-between p-2 sm:p-3 bg-white/5 rounded-xl'>
             <span className='text-white/70 font-medium'>Active Rules</span>
             <span className='font-bold text-amber-300'>
-              {selectedRules.length} of 6
+              {selectedRules.length} of {ALL_RULES.length}
             </span>
           </div>
           <div className='flex items-center justify-between p-2 sm:p-3 bg-white/5 rounded-xl'>

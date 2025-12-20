@@ -20,13 +20,19 @@ router = APIRouter()
 
 # Rule name mapping for human-readable names
 RULE_DISPLAY_NAMES = {
-    'rule_1_618_retracement': '61.8% Golden Retracement',
-    'rule_2_786_deep_discount': '78.6% Deep Discount',
-    'rule_3_236_shallow_pullback': '23.6% Shallow Pullback',
-    'rule_4_consolidation_break': 'Consolidation Breakout',
-    'rule_5_ath_breakout_retest': 'ATH Breakout Retest',
-    'rule_6_50_momentum': '50% Momentum',
+    'golden_retracement': 'Golden Retracement (61.8%)',
+    'ath_breakout_retest': 'ATH Breakout Retest',
+    'momentum_50': '50% Momentum',
+    'rsi_divergence': 'RSI Divergence',
+    'ema_crossover': 'EMA Crossover (9/21)',
+    'london_breakout': 'London Session Breakout',
+    'order_block': 'Order Block Retest',
+    'vwap_deviation': 'VWAP Deviation',
+    'bollinger_squeeze': 'Bollinger Band Squeeze',
 }
+
+# Valid rule IDs
+VALID_RULE_IDS = set(RULE_DISPLAY_NAMES.keys())
 
 
 class PerformanceSummary(BaseModel):
@@ -75,7 +81,7 @@ class TradeDetail(BaseModel):
 @router.get("/summary", response_model=PerformanceSummary)
 async def get_performance_summary(
     timeframe: str = Query("4h", description="Timeframe: 4h or 1d"),
-    rules: Optional[str] = Query("1,5,6", description="Comma-separated rule numbers (optimized: 1,5,6)")
+    rules: Optional[str] = Query("golden_retracement,ath_breakout_retest,momentum_50", description="Comma-separated rule IDs")
 ):
     """
     Get overall strategy performance summary.
@@ -101,24 +107,15 @@ async def get_performance_summary(
         # Initialize strategy
         strategy = GoldStrategy()
 
-        # Configure rules
+        # Configure rules - accept rule IDs directly
         if rules:
             for rule in strategy.rules_enabled:
                 strategy.rules_enabled[rule] = False
 
-            rule_map = {
-                '1': 'rule_1_618_retracement',
-                '2': 'rule_2_786_deep_discount',
-                '3': 'rule_3_236_shallow_pullback',
-                '4': 'rule_4_consolidation_break',
-                '5': 'rule_5_ath_breakout_retest',
-                '6': 'rule_6_50_momentum',
-            }
-
-            for rule_num in rules.split(','):
-                rule_num = rule_num.strip()
-                if rule_num in rule_map:
-                    strategy.rules_enabled[rule_map[rule_num]] = True
+            for rule_id in rules.split(','):
+                rule_id = rule_id.strip()
+                if rule_id in VALID_RULE_IDS:
+                    strategy.rules_enabled[rule_id] = True
 
         # Run backtest
         engine = BacktestEngine(initial_balance=10000, position_size_pct=2.0)
@@ -150,7 +147,7 @@ async def get_performance_summary(
 @router.get("/by-rule", response_model=List[RulePerformance])
 async def get_performance_by_rule(
     timeframe: str = Query("4h", description="Timeframe: 4h or 1d"),
-    rules: Optional[str] = Query("1,5,6", description="Comma-separated rule numbers (optimized: 1,5,6)")
+    rules: Optional[str] = Query("golden_retracement,ath_breakout_retest,momentum_50", description="Comma-separated rule IDs")
 ):
     """
     Get performance breakdown by individual rules.
@@ -176,24 +173,15 @@ async def get_performance_by_rule(
         # Initialize strategy
         strategy = GoldStrategy()
 
-        # Configure rules
+        # Configure rules - accept rule IDs directly
         if rules:
             for rule in strategy.rules_enabled:
                 strategy.rules_enabled[rule] = False
 
-            rule_map = {
-                '1': 'rule_1_618_retracement',
-                '2': 'rule_2_786_deep_discount',
-                '3': 'rule_3_236_shallow_pullback',
-                '4': 'rule_4_consolidation_break',
-                '5': 'rule_5_ath_breakout_retest',
-                '6': 'rule_6_50_momentum',
-            }
-
-            for rule_num in rules.split(','):
-                rule_num = rule_num.strip()
-                if rule_num in rule_map:
-                    strategy.rules_enabled[rule_map[rule_num]] = True
+            for rule_id in rules.split(','):
+                rule_id = rule_id.strip()
+                if rule_id in VALID_RULE_IDS:
+                    strategy.rules_enabled[rule_id] = True
 
         # Run backtest
         engine = BacktestEngine(initial_balance=10000, position_size_pct=2.0)
@@ -249,7 +237,7 @@ async def get_performance_by_rule(
 @router.get("/trades", response_model=List[TradeDetail])
 async def get_trade_history(
     timeframe: str = Query("4h", description="Timeframe: 4h or 1d"),
-    rules: Optional[str] = Query("1,5,6", description="Comma-separated rule numbers (optimized: 1,5,6)")
+    rules: Optional[str] = Query("golden_retracement,ath_breakout_retest,momentum_50", description="Comma-separated rule IDs")
 ):
     """
     Get individual trade history with entry, SL, TP details.
@@ -275,24 +263,15 @@ async def get_trade_history(
         # Initialize strategy
         strategy = GoldStrategy()
 
-        # Configure rules
+        # Configure rules - accept rule IDs directly
         if rules:
             for rule in strategy.rules_enabled:
                 strategy.rules_enabled[rule] = False
 
-            rule_map = {
-                '1': 'rule_1_618_retracement',
-                '2': 'rule_2_786_deep_discount',
-                '3': 'rule_3_236_shallow_pullback',
-                '4': 'rule_4_consolidation_break',
-                '5': 'rule_5_ath_breakout_retest',
-                '6': 'rule_6_50_momentum',
-            }
-
-            for rule_num in rules.split(','):
-                rule_num = rule_num.strip()
-                if rule_num in rule_map:
-                    strategy.rules_enabled[rule_map[rule_num]] = True
+            for rule_id in rules.split(','):
+                rule_id = rule_id.strip()
+                if rule_id in VALID_RULE_IDS:
+                    strategy.rules_enabled[rule_id] = True
 
         # Run backtest
         engine = BacktestEngine(initial_balance=10000, position_size_pct=2.0)

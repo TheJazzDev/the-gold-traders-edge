@@ -195,6 +195,7 @@ export function BacktestControls() {
         timeframe={timeframe}
         lastUpdate={lastUpdate}
         error={error}
+        rulePerformance={ruleData}
       />
     </>
   );
