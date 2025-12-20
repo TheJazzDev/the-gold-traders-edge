@@ -4,7 +4,7 @@ const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 
 const api = axios.create({
   baseURL: API_BASE_URL,
-  timeout: 30000,
+  timeout: 120000, // 2 minutes for backtest operations
 });
 
 // Types
@@ -118,5 +118,23 @@ export async function getLatestSignals(timeframe: string, rules?: string) {
 
 export async function healthCheck() {
   const response = await api.get('/health');
+  return response.data;
+}
+
+// Combined backtest result type
+export interface CombinedBacktestResult {
+  summary: PerformanceSummary;
+  rules: RulePerformance[];
+  trades: TradeDetail[];
+}
+
+// Run backtest once and get all results
+export async function runBacktest(
+  timeframe: string,
+  rules: string
+): Promise<CombinedBacktestResult> {
+  const response = await api.get('/v1/analytics/backtest', {
+    params: { timeframe, rules },
+  });
   return response.data;
 }

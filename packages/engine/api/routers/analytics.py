@@ -78,6 +78,13 @@ class TradeDetail(BaseModel):
     risk_reward: Optional[float]
 
 
+class CombinedBacktestResult(BaseModel):
+    """Combined backtest result - runs backtest once, returns all data."""
+    summary: PerformanceSummary
+    rules: List[RulePerformance]
+    trades: List[TradeDetail]
+
+
 @router.get("/summary", response_model=PerformanceSummary)
 async def get_performance_summary(
     timeframe: str = Query("4h", description="Timeframe: 4h or 1d"),
@@ -306,3 +313,136 @@ async def get_trade_history(
 
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error retrieving trade history: {str(e)}")
+
+
+@router.get("/backtest", response_model=CombinedBacktestResult)
+async def run_backtest(
+    timeframe: str = Query("4h", description="Timeframe: 4h or 1d"),
+    rules: Optional[str] = Query("golden_retracement,ath_breakout_retest,momentum_50", description="Comma-separated rule IDs")
+):
+    """
+    Run a complete backtest and return all results in one call.
+
+    This is more efficient than calling summary, by-rule, and trades separately.
+    """
+    try:
+        # Load data
+        loader = GoldDataLoader()
+        processed_dir = Path("data/processed")
+        pattern = f"xauusd_{timeframe}_*.csv"
+        matching_files = list(processed_dir.glob(pattern))
+
+        if not matching_files:
+            raise HTTPException(
+                status_code=404,
+                detail=f"No data available for timeframe {timeframe}"
+            )
+
+        data_file = sorted(matching_files)[-1]
+        df = loader.load_from_csv(str(data_file))
+
+        # Initialize strategy
+        strategy = GoldStrategy()
+
+        # Configure rules
+        if rules:
+            for rule in strategy.rules_enabled:
+                strategy.rules_enabled[rule] = False
+
+            for rule_id in rules.split(','):
+                rule_id = rule_id.strip()
+                if rule_id in VALID_RULE_IDS:
+                    strategy.rules_enabled[rule_id] = True
+
+        # Run backtest ONCE
+        engine = BacktestEngine(initial_balance=10000, position_size_pct=2.0)
+        result = engine.run(df=df, strategy_func=create_strategy_function(strategy))
+
+        # Build summary
+        net_profit = result.final_balance - result.initial_balance
+        return_pct = (net_profit / result.initial_balance) * 100
+
+        summary = PerformanceSummary(
+            period="all",
+            timeframe=timeframe,
+            total_signals=result.total_trades,
+            winning_signals=result.winning_trades,
+            losing_signals=result.losing_trades,
+            win_rate=result.win_rate,
+            profit_factor=result.profit_factor,
+            total_return_pct=return_pct,
+            sharpe_ratio=result.sharpe_ratio,
+            max_drawdown_pct=result.max_drawdown_pct,
+            avg_win=result.avg_win,
+            avg_loss=abs(result.avg_loss)
+        )
+
+        # Build rule performance
+        rule_stats = {}
+        for trade in result.trades:
+            rule = trade.signal_name
+            if rule not in rule_stats:
+                rule_stats[rule] = {
+                    'count': 0,
+                    'wins': 0,
+                    'gross_profit': 0,
+                    'gross_loss': 0,
+                    'pnl': 0
+                }
+
+            rule_stats[rule]['count'] += 1
+            rule_stats[rule]['pnl'] += trade.pnl
+
+            if trade.pnl > 0:
+                rule_stats[rule]['wins'] += 1
+                rule_stats[rule]['gross_profit'] += trade.pnl
+            else:
+                rule_stats[rule]['gross_loss'] += abs(trade.pnl)
+
+        rule_performances = []
+        for rule, stats in sorted(rule_stats.items(), key=lambda x: x[1]['pnl'], reverse=True):
+            win_rate = (stats['wins'] / stats['count'] * 100) if stats['count'] > 0 else 0
+            pf = stats['gross_profit'] / stats['gross_loss'] if stats['gross_loss'] > 0 else 99.99
+            avg_return = stats['pnl'] / stats['count'] if stats['count'] > 0 else 0
+
+            display_name = RULE_DISPLAY_NAMES.get(rule, rule.replace('_', ' ').title())
+
+            rule_performances.append(RulePerformance(
+                name=display_name,
+                total_signals=stats['count'],
+                win_rate=win_rate,
+                profit_factor=pf if pf != float('inf') else 99.99,
+                net_pnl=stats['pnl'],
+                avg_return=avg_return
+            ))
+
+        # Build trade details
+        trade_details = []
+        for trade in result.trades:
+            pnl_pct = (trade.pnl / (trade.entry_price * trade.position_size)) * 100 if trade.entry_price and trade.position_size else 0
+            display_name = RULE_DISPLAY_NAMES.get(trade.signal_name, trade.signal_name.replace('_', ' ').title())
+
+            trade_details.append(TradeDetail(
+                id=trade.id,
+                signal_name=display_name,
+                direction=trade.direction.value,
+                entry_time=str(trade.entry_time),
+                entry_price=trade.entry_price,
+                exit_time=str(trade.exit_time) if trade.exit_time else None,
+                exit_price=trade.exit_price,
+                stop_loss=trade.stop_loss,
+                take_profit=trade.take_profit,
+                status=trade.status.value.replace('_', ' ').title(),
+                pnl=trade.pnl,
+                pnl_pct=pnl_pct,
+                risk_reward=trade.risk_reward
+            ))
+
+        return CombinedBacktestResult(
+            summary=summary,
+            rules=rule_performances,
+            trades=trade_details
+        )
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error running backtest: {str(e)}")

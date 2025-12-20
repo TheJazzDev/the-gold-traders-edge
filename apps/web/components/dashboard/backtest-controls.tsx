@@ -12,9 +12,7 @@ import { RulePerformanceChart } from './rule-performance-chart';
 import { TradeHistoryTable } from './trade-history-table';
 import { PriceChart } from './price-chart';
 import {
-  getPerformanceSummary,
-  getRulePerformance,
-  getTradeHistory,
+  runBacktest,
   getOHLCV,
   type PerformanceSummary,
   type RulePerformance,
@@ -58,7 +56,7 @@ export function BacktestControls() {
     setSelectedRules([]);
   };
 
-  const runBacktest = async () => {
+  const handleRunBacktest = async () => {
     if (selectedRules.length === 0) {
       setError('Please select at least one rule to run the backtest.');
       return;
@@ -70,16 +68,15 @@ export function BacktestControls() {
 
       const rules = selectedRules.join(',');
 
-      const [performance, rules_data, trades, ohlcv] = await Promise.all([
-        getPerformanceSummary(timeframe, rules),
-        getRulePerformance(timeframe, rules),
-        getTradeHistory(timeframe, rules),
+      // Run backtest once and get OHLCV data in parallel
+      const [backtestResult, ohlcv] = await Promise.all([
+        runBacktest(timeframe, rules),
         getOHLCV(timeframe, 500),
       ]);
 
-      setPerformanceData(performance);
-      setRuleData(rules_data);
-      setTradeData(trades);
+      setPerformanceData(backtestResult.summary);
+      setRuleData(backtestResult.rules);
+      setTradeData(backtestResult.trades);
       setCandleData(ohlcv.candles);
       setLastUpdate(new Date());
       setHasRun(true);
@@ -126,7 +123,7 @@ export function BacktestControls() {
             )}
           </div>
           <button
-            onClick={runBacktest}
+            onClick={handleRunBacktest}
             disabled={loading || selectedRules.length === 0}
             className='group relative px-6 sm:px-8 py-3 sm:py-4 bg-linear-to-r from-amber-500 via-yellow-500 to-amber-500 text-slate-900 font-bold text-base sm:text-lg rounded-xl hover:shadow-2xl hover:shadow-amber-500/30 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-300 hover:scale-105 active:scale-95 w-full sm:w-auto'>
             <span className='flex items-center justify-center gap-2 sm:gap-3'>
