@@ -121,18 +121,24 @@ class GoldStrategy:
         self.df: Optional[pd.DataFrame] = None
 
         # Enable/disable individual rules - using descriptive names
+        # Based on backtesting results (see RULE_TESTING_RESULTS.md)
         self.rules_enabled = {
-            # Original profitable rules
-            'golden_retracement': True,    # 61.8% Fibonacci retracement
-            'ath_breakout_retest': True,   # ATH/ATL breakout retest
-            'momentum_50': True,           # 50% momentum equilibrium
-            # New rules
-            'rsi_divergence': True,        # RSI divergence
-            'ema_crossover': True,         # EMA 9/21 crossover
-            'london_breakout': True,       # London session breakout
-            'order_block': True,           # Order block retest
-            'vwap_deviation': True,        # VWAP deviation
-            'bollinger_squeeze': True,     # Bollinger Band squeeze
+            # TIER 1: Highly Profitable (PRODUCTION READY)
+            'momentum_50': True,           # Rule 6: 74% win rate, 3.31 PF, $21K profit - STAR PERFORMER
+
+            # TIER 2: Profitable (Good but not essential)
+            'london_breakout': True,       # Rule 9: 58.8% win rate, 2.74 PF, $2.6K profit
+            'golden_retracement': False,   # Rule 1: 49.1% win rate, 1.31 PF, $2.2K profit - MARGINAL
+            'order_block': False,          # Rule 10: 38.6% win rate, 1.14 PF, $2.1K profit - MARGINAL
+
+            # TIER 3: Barely Profitable (Not recommended)
+            'ath_breakout_retest': False,  # Rule 5: 38.3% win rate, 1.06 PF, $287 profit - BARELY
+            'bollinger_squeeze': False,    # Rule 12: 31.2% win rate, 1.07 PF, $87 profit - BARELY
+
+            # TIER 4: UNPROFITABLE (DISABLED - lose money)
+            'rsi_divergence': False,       # Rule 7: 30.4% win rate, 0.67 PF, -$7.7K loss - TERRIBLE
+            'ema_crossover': False,        # Rule 8: 34.1% win rate, 0.91 PF, -$1.3K loss - BAD
+            'vwap_deviation': False,       # Rule 11: 15.0% win rate, 0.39 PF, -$1.9K loss - TERRIBLE
         }
 
     def set_rule_enabled(self, rule_name: str, enabled: bool):
@@ -498,7 +504,7 @@ class GoldStrategy:
         Golden Retracement (61.8%)
         Price retraces to the golden ratio Fibonacci level.
         """
-        result = RuleResult(rule_name="Golden Retracement", triggered=False)
+        result = RuleResult(rule_name="Rule1_618_Golden", triggered=False)
 
         fib = self._get_fib_zones(df, idx)
         if fib is None:
@@ -568,7 +574,7 @@ class GoldStrategy:
         ATH Breakout Retest
         Retest of all-time high as support after breakout.
         """
-        result = RuleResult(rule_name="ATH Breakout Retest", triggered=False)
+        result = RuleResult(rule_name="Rule5_ATH_Retest", triggered=False)
 
         lookback = 100
         if idx < lookback:
@@ -644,7 +650,7 @@ class GoldStrategy:
         50% Momentum
         Equilibrium entry in strong momentum at 50% retracement.
         """
-        result = RuleResult(rule_name="50% Momentum", triggered=False)
+        result = RuleResult(rule_name="Rule6_50_Momentum", triggered=False)
 
         momentum = self._get_momentum_strength(df, idx, lookback=10)
         if momentum == MomentumStrength.WEAK:
@@ -709,7 +715,7 @@ class GoldStrategy:
         RSI Divergence
         Bullish/bearish divergence between price and RSI indicator.
         """
-        result = RuleResult(rule_name="RSI Divergence", triggered=False)
+        result = RuleResult(rule_name="Rule7_RSI_Divergence", triggered=False)
 
         divergence = self._detect_rsi_divergence(df, idx)
         if divergence is None:
@@ -765,7 +771,7 @@ class GoldStrategy:
         EMA Crossover (9/21)
         Fast EMA crosses slow EMA with trend confirmation.
         """
-        result = RuleResult(rule_name="EMA Crossover", triggered=False)
+        result = RuleResult(rule_name="Rule8_EMA_Crossover", triggered=False)
 
         if idx < self.config['ema_slow'] + 5:
             return result
@@ -835,7 +841,7 @@ class GoldStrategy:
         London Session Breakout
         Breakout of Asian session range during London open.
         """
-        result = RuleResult(rule_name="London Breakout", triggered=False)
+        result = RuleResult(rule_name="Rule9_London_Breakout", triggered=False)
 
         if idx < 20:
             return result
@@ -910,7 +916,7 @@ class GoldStrategy:
         Order Block Retest
         Smart money concept - institutional entry zone retest.
         """
-        result = RuleResult(rule_name="Order Block", triggered=False)
+        result = RuleResult(rule_name="Rule10_Order_Block", triggered=False)
 
         ob = self._detect_order_block(df, idx)
         if ob is None:
@@ -967,7 +973,7 @@ class GoldStrategy:
         VWAP Deviation
         Mean reversion when price deviates 2+ ATR from VWAP.
         """
-        result = RuleResult(rule_name="VWAP Deviation", triggered=False)
+        result = RuleResult(rule_name="Rule11_VWAP_Deviation", triggered=False)
 
         if idx < 30:
             return result
@@ -1028,7 +1034,7 @@ class GoldStrategy:
         Bollinger Band Squeeze
         Low volatility squeeze followed by explosive breakout.
         """
-        result = RuleResult(rule_name="Bollinger Squeeze", triggered=False)
+        result = RuleResult(rule_name="Rule12_Bollinger_Squeeze", triggered=False)
 
         if idx < self.config['bb_period'] + 10:
             return result

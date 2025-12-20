@@ -99,27 +99,37 @@ def main():
         
         # Enable specified rules
         rule_map = {
-            '1': 'rule_1_618_retracement',
-            '2': 'rule_2_786_deep_discount',
-            '3': 'rule_3_236_shallow_pullback',
-            '4': 'rule_4_consolidation_break',
-            '5': 'rule_5_ath_breakout_retest',
-            '6': 'rule_6_50_momentum',
+            # Original 3 profitable rules
+            '1': 'golden_retracement',
+            '5': 'ath_breakout_retest',
+            '6': 'momentum_50',
+            # New 6 rules to be tested
+            '7': 'rsi_divergence',
+            '8': 'ema_crossover',
+            '9': 'london_breakout',
+            '10': 'order_block',
+            '11': 'vwap_deviation',
+            '12': 'bollinger_squeeze',
         }
-        
+
         for rule_num in args.rules.split(','):
             rule_num = rule_num.strip()
             if rule_num in rule_map:
                 strategy.rules_enabled[rule_map[rule_num]] = True
-    
+
     print("\n   Active Rules:")
     rule_names = {
-        'rule_1_618_retracement': 'Rule 1: 61.8% Golden Retracement',
-        'rule_2_786_deep_discount': 'Rule 2: 78.6% Deep Discount',
-        'rule_3_236_shallow_pullback': 'Rule 3: 23.6% Shallow Pullback',
-        'rule_4_consolidation_break': 'Rule 4: Consolidation Break',
-        'rule_5_ath_breakout_retest': 'Rule 5: ATH Breakout Retest',
-        'rule_6_50_momentum': 'Rule 6: 50% Momentum',
+        # Original 3 profitable rules
+        'golden_retracement': 'Rule 1: 61.8% Golden Retracement',
+        'ath_breakout_retest': 'Rule 5: ATH Breakout Retest',
+        'momentum_50': 'Rule 6: 50% Momentum',
+        # New 6 rules to be tested
+        'rsi_divergence': 'Rule 7: RSI Divergence',
+        'ema_crossover': 'Rule 8: EMA 9/21 Crossover',
+        'london_breakout': 'Rule 9: London Session Breakout',
+        'order_block': 'Rule 10: Order Block Retest',
+        'vwap_deviation': 'Rule 11: VWAP Deviation',
+        'bollinger_squeeze': 'Rule 12: Bollinger Band Squeeze',
     }
     
     for rule, enabled in strategy.rules_enabled.items():

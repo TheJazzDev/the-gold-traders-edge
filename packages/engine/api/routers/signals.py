@@ -82,12 +82,17 @@ async def get_latest_signals(
                 strategy.rules_enabled[rule] = False
 
             rule_map = {
-                '1': 'rule_1_618_retracement',
-                '2': 'rule_2_786_deep_discount',
-                '3': 'rule_3_236_shallow_pullback',
-                '4': 'rule_4_consolidation_break',
-                '5': 'rule_5_ath_breakout_retest',
-                '6': 'rule_6_50_momentum',
+                # Original 3 profitable rules
+                '1': 'golden_retracement',
+                '5': 'ath_breakout_retest',
+                '6': 'momentum_50',
+                # New 6 rules to be tested
+                '7': 'rsi_divergence',
+                '8': 'ema_crossover',
+                '9': 'london_breakout',
+                '10': 'order_block',
+                '11': 'vwap_deviation',
+                '12': 'bollinger_squeeze',
             }
 
             for rule_num in rules.split(','):
