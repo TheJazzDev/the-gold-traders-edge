@@ -1,12 +1,10 @@
 import { DashboardHeader } from '@/components/dashboard/dashboard-header';
+import { BacktestControls } from '@/components/dashboard/backtest-controls';
 import { DashboardFooter } from '@/components/dashboard/dashboard-footer';
-import { ServiceStatus } from '@/components/signals/service-status';
-import { SignalsList } from '@/components/signals/signals-list';
-import { PerformanceSummary } from '@/components/signals/performance-summary';
 import Link from 'next/link';
-import { BarChart3 } from 'lucide-react';
+import { ArrowLeft } from 'lucide-react';
 
-export default function DashboardPage() {
+export default function BacktestPage() {
   return (
     <div className='min-h-screen bg-linear-to-br from-slate-900 via-purple-900 to-slate-900'>
       {/* Animated background elements */}
@@ -28,25 +26,15 @@ export default function DashboardPage() {
         {/* Navigation */}
         <div className='mb-6'>
           <Link
-            href='/backtest'
+            href='/'
             className='inline-flex items-center gap-2 px-4 py-2 bg-white/10 hover:bg-white/20 backdrop-blur-xl rounded-xl border border-white/20 text-white transition-all hover:scale-105'
           >
-            <BarChart3 className='w-4 h-4' />
-            View Backtest Results
+            <ArrowLeft className='w-4 h-4' />
+            Back to Live Signals
           </Link>
         </div>
 
-        {/* Service Status */}
-        <div className='mb-8'>
-          <ServiceStatus />
-        </div>
-
-        {/* Performance Summary */}
-        <PerformanceSummary />
-
-        {/* Real-Time Signals */}
-        <SignalsList limit={10} />
-
+        <BacktestControls />
         <DashboardFooter />
       </main>
     </div>

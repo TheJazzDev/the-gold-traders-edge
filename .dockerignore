@@ -1,0 +1,54 @@
+# Node modules
+**/node_modules
+**/dist
+**/.next
+
+# Python
+**/__pycache__
+**/*.pyc
+**/*.pyo
+**/*.pyd
+**/.Python
+**/env
+**/venv
+**/*.egg-info
+**/.pytest_cache
+
+# IDEs
+.vscode
+.idea
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Git
+.git
+.gitignore
+
+# Logs
+**/*.log
+
+# Environment
+**/.env
+**/.env.local
+
+# Database files (we'll use volumes)
+**/*.db
+**/*.sqlite
+
+# Documentation
+**/*.md
+!README.md
+
+# Tests
+**/tests
+**/*_test.py
+**/test_*.py
+
+# Build artifacts
+**/build
+**/*.whl
