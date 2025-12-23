@@ -11,7 +11,7 @@ from fastapi.responses import HTMLResponse
 from pathlib import Path
 
 from src.database import init_db
-from src.routes import signals_router
+from src.routes import signals_router, analytics_router, market_router
 
 app = FastAPI(
     title="Gold Trader's Edge API",
@@ -35,6 +35,8 @@ if static_path.exists():
 
 # Include routers
 app.include_router(signals_router)
+app.include_router(analytics_router)
+app.include_router(market_router)
 
 
 @app.on_event("startup")

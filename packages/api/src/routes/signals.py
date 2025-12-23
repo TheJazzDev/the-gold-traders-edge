@@ -25,7 +25,7 @@ from src.models.signal import (
 )
 from src.database import get_db
 
-router = APIRouter(prefix="/api/signals", tags=["signals"])
+router = APIRouter(prefix="/v1/signals", tags=["signals"])
 
 
 @router.get("/", response_model=SignalList)
