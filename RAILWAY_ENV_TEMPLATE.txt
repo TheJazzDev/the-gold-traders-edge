@@ -1,47 +1,18 @@
-# ============================================================================
-# RAILWAY ENVIRONMENT VARIABLES
-# Copy these to Railway Dashboard → Variables
-# ============================================================================
-
-# CORE SETTINGS
 ENVIRONMENT=production
 DATABASE_URL=sqlite:////data/signals.db
-
-# API CONFIGURATION
 API_V1_STR=/v1
 PROJECT_NAME=Gold Trader's Edge API
 API_HOST=0.0.0.0
 PORT=8000
-
-# CORS - IMPORTANT: Replace with YOUR Vercel URL!
 CORS_ORIGINS=https://your-app-name.vercel.app,http://localhost:3000
-
-# DATA FEED (Yahoo Finance - Free)
 DATAFEED_TYPE=yahoo
 SYMBOL=XAUUSD
 TIMEFRAME=4H
-
-# SIGNAL GENERATION
 ENABLE_DATABASE=true
 ENABLE_LOGGER=true
 ENABLE_CONSOLE=true
 MIN_RR_RATIO=1.5
 HEARTBEAT_INTERVAL=5
-
-# SECURITY - IMPORTANT: Generate a new secret key!
-# Run: openssl rand -hex 32
-SECRET_KEY=REPLACE_WITH_OUTPUT_FROM_OPENSSL_RAND_HEX_32
+SECRET_KEY=31d1bd08f55fe4a907fc938b6c66e01b5a7f692363ea76c665236505b2e81f8b
 ALGORITHM=HS256
 ACCESS_TOKEN_EXPIRE_MINUTES=1440
-
-# ============================================================================
-# OPTIONAL: Demo Trading (Add these after MetaAPI activation)
-# ============================================================================
-# MT5_CONNECTION_TYPE=metaapi
-# METAAPI_TOKEN=your_metaapi_token
-# METAAPI_ACCOUNT_ID=your_account_id
-# MT5_SYMBOL=XAUUSD
-# MAX_RISK_PER_TRADE=0.01
-# MAX_POSITIONS=2
-# MAX_DAILY_LOSS=0.03
-# POSITION_SIZE_MODE=risk_based
