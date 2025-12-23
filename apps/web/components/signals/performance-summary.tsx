@@ -24,7 +24,8 @@ export function PerformanceSummary() {
 
   const fetchPerformance = async () => {
     try {
-      const response = await fetch('http://localhost:8000/v1/analytics/summary');
+      const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+      const response = await fetch(`${API_URL}/v1/analytics/summary`);
       if (!response.ok) throw new Error('Failed to fetch performance');
       const perfData = await response.json();
 

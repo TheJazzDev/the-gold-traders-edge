@@ -83,7 +83,7 @@ export function BacktestControls() {
     } catch (err) {
       console.error('Error fetching data:', err);
       setError(
-        'Failed to load dashboard data. Make sure the API is running on http://localhost:8000'
+        `Failed to load dashboard data. Make sure the API is running on ${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'}`
       );
     } finally {
       setLoading(false);

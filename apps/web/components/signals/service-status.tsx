@@ -23,7 +23,8 @@ export function ServiceStatus() {
 
   const fetchStatus = async () => {
     try {
-      const response = await fetch('http://localhost:8000/v1/signals/latest');
+      const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+      const response = await fetch(`${API_URL}/v1/signals/latest`);
       if (!response.ok) throw new Error('Failed to fetch status');
       const data = await response.json();
       // Transform the latest endpoint data to status format

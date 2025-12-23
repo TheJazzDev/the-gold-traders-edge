@@ -32,7 +32,8 @@ export function SignalsList({ limit = 10 }: SignalsListProps) {
 
   const fetchSignals = async () => {
     try {
-      const response = await fetch(`http://localhost:8000/v1/signals/history?limit=${limit}`);
+      const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+      const response = await fetch(`${API_URL}/v1/signals/history?limit=${limit}`);
       if (!response.ok) throw new Error('Failed to fetch signals');
       const data = await response.json();
       // API returns array directly

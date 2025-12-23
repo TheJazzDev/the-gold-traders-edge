@@ -6,7 +6,7 @@ export function DashboardFooter() {
       </p>
       <p className='mt-2'>
         <a
-          href='http://localhost:8000/docs'
+          href={`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'}/docs`}
           target='_blank'
           rel='noopener noreferrer'
           className='text-amber-400 hover:text-amber-300 transition-colors'>
