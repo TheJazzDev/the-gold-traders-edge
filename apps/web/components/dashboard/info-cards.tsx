@@ -32,7 +32,6 @@ export function InfoCards({
   };
   return (
     <div className='grid md:grid-cols-2 gap-4 sm:gap-6 mt-8'>
-      {/* Trading Rules Guide */}
       <div className='bg-linear-to-br from-amber-500/20 to-yellow-500/10 backdrop-blur-xl rounded-2xl border border-amber-500/30 p-4 sm:p-6 shadow-xl'>
         <h3 className='text-base sm:text-lg font-bold text-amber-300 mb-3 sm:mb-4 flex items-center gap-2'>
           <span>🎯</span> Trading Rules Guide
@@ -52,7 +51,6 @@ export function InfoCards({
                     ? 'text-amber-400'
                     : 'text-white/40'
                 }`}>
-                #{rule.id}
               </span>
               <div>
                 <span

@@ -1,0 +1,464 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Gold Trader's Edge - Real-Time Signals</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: #333;
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+        }
+
+        .header {
+            background: white;
+            border-radius: 16px;
+            padding: 30px;
+            margin-bottom: 20px;
+            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.1);
+        }
+
+        .header h1 {
+            font-size: 32px;
+            color: #667eea;
+            margin-bottom: 10px;
+        }
+
+        .header p {
+            color: #666;
+            font-size: 16px;
+        }
+
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 20px;
+            margin-bottom: 20px;
+        }
+
+        .stat-card {
+            background: white;
+            border-radius: 12px;
+            padding: 24px;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.08);
+        }
+
+        .stat-label {
+            font-size: 14px;
+            color: #888;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            margin-bottom: 8px;
+        }
+
+        .stat-value {
+            font-size: 28px;
+            font-weight: 700;
+            color: #333;
+            margin-bottom: 4px;
+        }
+
+        .stat-sub {
+            font-size: 13px;
+            color: #666;
+        }
+
+        .price-card {
+            background: linear-gradient(135deg, #FFD700 0%, #FFA500 100%);
+            color: white;
+        }
+
+        .price-card .stat-label,
+        .price-card .stat-sub {
+            color: rgba(255, 255, 255, 0.9);
+        }
+
+        .price-card .stat-value {
+            color: white;
+            font-size: 36px;
+        }
+
+        .status-running {
+            background: linear-gradient(135deg, #11998e 0%, #38ef7d 100%);
+            color: white;
+        }
+
+        .status-running .stat-label,
+        .status-running .stat-sub {
+            color: rgba(255, 255, 255, 0.9);
+        }
+
+        .status-running .stat-value {
+            color: white;
+        }
+
+        .signals-section {
+            background: white;
+            border-radius: 16px;
+            padding: 30px;
+            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.1);
+        }
+
+        .section-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 24px;
+        }
+
+        .section-title {
+            font-size: 24px;
+            font-weight: 700;
+            color: #333;
+        }
+
+        .refresh-btn {
+            background: #667eea;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: 600;
+            transition: all 0.3s;
+        }
+
+        .refresh-btn:hover {
+            background: #5568d3;
+            transform: translateY(-1px);
+        }
+
+        .signals-list {
+            display: grid;
+            gap: 16px;
+        }
+
+        .signal-card {
+            border: 2px solid #f0f0f0;
+            border-radius: 12px;
+            padding: 20px;
+            transition: all 0.3s;
+            cursor: pointer;
+        }
+
+        .signal-card:hover {
+            border-color: #667eea;
+            box-shadow: 0 4px 16px rgba(102, 126, 234, 0.1);
+        }
+
+        .signal-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 16px;
+        }
+
+        .signal-direction {
+            font-size: 20px;
+            font-weight: 700;
+            padding: 8px 16px;
+            border-radius: 8px;
+        }
+
+        .signal-long {
+            background: #d4edda;
+            color: #155724;
+        }
+
+        .signal-short {
+            background: #f8d7da;
+            color: #721c24;
+        }
+
+        .signal-time {
+            color: #888;
+            font-size: 14px;
+        }
+
+        .signal-details {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            gap: 12px;
+        }
+
+        .signal-detail {
+            display: flex;
+            flex-direction: column;
+        }
+
+        .detail-label {
+            font-size: 12px;
+            color: #888;
+            margin-bottom: 4px;
+        }
+
+        .detail-value {
+            font-size: 16px;
+            font-weight: 600;
+            color: #333;
+        }
+
+        .loading {
+            text-align: center;
+            padding: 40px;
+            color: #888;
+        }
+
+        .spinner {
+            border: 3px solid #f3f3f3;
+            border-top: 3px solid #667eea;
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 16px;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        .no-signals {
+            text-align: center;
+            padding: 60px 20px;
+            color: #888;
+        }
+
+        .no-signals-icon {
+            font-size: 64px;
+            margin-bottom: 16px;
+        }
+
+        @media (max-width: 768px) {
+            .stats-grid {
+                grid-template-columns: 1fr;
+            }
+
+            .signal-details {
+                grid-template-columns: 1fr 1fr;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <!-- Header -->
+        <div class="header">
+            <h1>📊 Gold Trader's Edge</h1>
+            <p>Real-Time Trading Signals for XAUUSD (Gold)</p>
+        </div>
+
+        <!-- Stats Grid -->
+        <div class="stats-grid">
+            <div class="stat-card price-card">
+                <div class="stat-label">Current Gold Price</div>
+                <div class="stat-value" id="currentPrice">Loading...</div>
+                <div class="stat-sub" id="priceChange"></div>
+            </div>
+
+            <div class="stat-card status-running">
+                <div class="stat-label">Service Status</div>
+                <div class="stat-value" id="serviceStatus">Checking...</div>
+                <div class="stat-sub" id="nextCandle"></div>
+            </div>
+
+            <div class="stat-card">
+                <div class="stat-label">Total Signals</div>
+                <div class="stat-value" id="totalSignals">0</div>
+                <div class="stat-sub">All time</div>
+            </div>
+
+            <div class="stat-card">
+                <div class="stat-label">Signal Rate</div>
+                <div class="stat-value" id="signalRate">0%</div>
+                <div class="stat-sub">Of candles analyzed</div>
+            </div>
+        </div>
+
+        <!-- Signals Section -->
+        <div class="signals-section">
+            <div class="section-header">
+                <h2 class="section-title">Latest Signals</h2>
+                <button class="refresh-btn" onclick="loadSignals()">🔄 Refresh</button>
+            </div>
+
+            <div id="signalsList" class="signals-list">
+                <div class="loading">
+                    <div class="spinner"></div>
+                    <div>Loading signals...</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const API_BASE = window.location.origin;
+
+        // Format timestamp
+        function formatTime(timestamp) {
+            const date = new Date(timestamp);
+            return date.toLocaleString('en-US', {
+                month: 'short',
+                day: 'numeric',
+                year: 'numeric',
+                hour: '2-digit',
+                minute: '2-digit'
+            });
+        }
+
+        // Format currency
+        function formatCurrency(value) {
+            return '$' + value.toFixed(2).replace(/\d(?=(\d{3})+\.)/g, '$&,');
+        }
+
+        // Load current price
+        async function loadPrice() {
+            try {
+                const response = await fetch(`${API_BASE}/api/signals/price/current`);
+                const data = await response.json();
+
+                document.getElementById('currentPrice').textContent = formatCurrency(data.price);
+
+                if (data.change !== null) {
+                    const changeText = data.change >= 0 ? '+' : '';
+                    document.getElementById('priceChange').textContent =
+                        `${changeText}${formatCurrency(data.change)} (${data.change_pct.toFixed(2)}%)`;
+                }
+            } catch (error) {
+                console.error('Failed to load price:', error);
+                document.getElementById('currentPrice').textContent = 'Unavailable';
+            }
+        }
+
+        // Load service status
+        async function loadStatus() {
+            try {
+                const response = await fetch(`${API_BASE}/api/signals/service/status`);
+                const data = await response.json();
+
+                document.getElementById('serviceStatus').textContent =
+                    data.status.charAt(0).toUpperCase() + data.status.slice(1);
+
+                if (data.next_candle_time) {
+                    const next = new Date(data.next_candle_time);
+                    const now = new Date();
+                    const diff = next - now;
+                    const hours = Math.floor(diff / 3600000);
+                    const minutes = Math.floor((diff % 3600000) / 60000);
+                    document.getElementById('nextCandle').textContent =
+                        `Next candle in ${hours}h ${minutes}m`;
+                }
+
+                document.getElementById('totalSignals').textContent = data.signals_generated;
+
+                if (data.signal_rate !== null) {
+                    document.getElementById('signalRate').textContent =
+                        data.signal_rate.toFixed(1) + '%';
+                }
+            } catch (error) {
+                console.error('Failed to load status:', error);
+            }
+        }
+
+        // Load signals
+        async function loadSignals() {
+            try {
+                const response = await fetch(`${API_BASE}/api/signals/?page_size=20`);
+                const data = await response.json();
+
+                const signalsList = document.getElementById('signalsList');
+
+                if (data.signals.length === 0) {
+                    signalsList.innerHTML = `
+                        <div class="no-signals">
+                            <div class="no-signals-icon">📭</div>
+                            <h3>No Signals Yet</h3>
+                            <p>Waiting for the signal service to generate signals...</p>
+                        </div>
+                    `;
+                    return;
+                }
+
+                signalsList.innerHTML = data.signals.map(signal => `
+                    <div class="signal-card">
+                        <div class="signal-header">
+                            <div class="signal-direction signal-${signal.direction.toLowerCase()}">
+                                ${signal.direction}
+                            </div>
+                            <div class="signal-time">
+                                ${formatTime(signal.timestamp)}
+                            </div>
+                        </div>
+                        <div class="signal-details">
+                            <div class="signal-detail">
+                                <div class="detail-label">Entry Price</div>
+                                <div class="detail-value">${formatCurrency(signal.entry_price)}</div>
+                            </div>
+                            <div class="signal-detail">
+                                <div class="detail-label">Stop Loss</div>
+                                <div class="detail-value">${formatCurrency(signal.stop_loss)}</div>
+                            </div>
+                            <div class="signal-detail">
+                                <div class="detail-label">Take Profit</div>
+                                <div class="detail-value">${formatCurrency(signal.take_profit)}</div>
+                            </div>
+                            <div class="signal-detail">
+                                <div class="detail-label">R:R Ratio</div>
+                                <div class="detail-value">1:${signal.risk_reward_ratio?.toFixed(2) || 'N/A'}</div>
+                            </div>
+                            <div class="signal-detail">
+                                <div class="detail-label">Confidence</div>
+                                <div class="detail-value">${(signal.confidence * 100).toFixed(0)}%</div>
+                            </div>
+                            <div class="signal-detail">
+                                <div class="detail-label">Status</div>
+                                <div class="detail-value">${signal.status.replace('_', ' ').toUpperCase()}</div>
+                            </div>
+                        </div>
+                    </div>
+                `).join('');
+            } catch (error) {
+                console.error('Failed to load signals:', error);
+                document.getElementById('signalsList').innerHTML = `
+                    <div class="no-signals">
+                        <div class="no-signals-icon">❌</div>
+                        <h3>Failed to Load Signals</h3>
+                        <p>${error.message}</p>
+                    </div>
+                `;
+            }
+        }
+
+        // Initialize dashboard
+        async function init() {
+            await Promise.all([
+                loadPrice(),
+                loadStatus(),
+                loadSignals()
+            ]);
+        }
+
+        // Auto-refresh
+        init();
+        setInterval(loadPrice, 30000);  // Update price every 30 seconds
+        setInterval(loadStatus, 60000);  // Update status every minute
+        setInterval(loadSignals, 120000); // Update signals every 2 minutes
+    </script>
+</body>
+</html>

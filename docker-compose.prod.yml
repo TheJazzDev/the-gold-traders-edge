@@ -1,0 +1,64 @@
+version: '3.8'
+
+services:
+  # API Service
+  api:
+    build: .
+    container_name: gold-trader-api
+    ports:
+      - "8000:8000"
+    environment:
+      # API Configuration
+      - API_V1_STR=/v1
+      - PROJECT_NAME=Gold Trader's Edge API
+      - CORS_ORIGINS=https://your-vercel-app.vercel.app,http://localhost:3000
+
+      # Database (shared volume with engine)
+      - DATABASE_URL=sqlite:////data/signals.db
+
+      # API Server
+      - API_HOST=0.0.0.0
+      - API_PORT=8000
+    volumes:
+      - signal-data:/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import requests; requests.get('http://localhost:8000/health')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Signal Generation Service
+  signal-generator:
+    build: .
+    container_name: gold-trader-signals
+    command: ["python", "/app/engine/run_signal_service.py"]
+    environment:
+      # Data Feed
+      - DATAFEED_TYPE=yahoo
+      - SYMBOL=XAUUSD
+      - TIMEFRAME=4H
+
+      # Database (shared with API)
+      - DATABASE_URL=sqlite:////data/signals.db
+
+      # Subscribers
+      - ENABLE_DATABASE=true
+      - ENABLE_LOGGER=true
+      - ENABLE_CONSOLE=true
+
+      # Signal Validation
+      - MIN_RR_RATIO=1.5
+
+      # Monitoring
+      - HEARTBEAT_INTERVAL=5
+    volumes:
+      - signal-data:/data
+      - ./packages/engine/logs:/app/engine/logs
+    restart: unless-stopped
+    depends_on:
+      - api
+
+volumes:
+  signal-data:
+    driver: local
