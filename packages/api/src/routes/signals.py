@@ -28,6 +28,101 @@ from src.database import get_db
 router = APIRouter(prefix="/v1/signals", tags=["signals"])
 
 
+@router.get("/history")
+async def get_signals_history(
+    limit: int = Query(10, ge=1, le=100),
+    db: Session = Depends(get_db)
+):
+    """
+    Get signal history with limit.
+
+    Args:
+        limit: Number of signals to return
+        db: Database session
+
+    Returns:
+        List of recent signals
+    """
+    signals = db.query(Signal).order_by(desc(Signal.timestamp)).limit(limit).all()
+
+    return {
+        "signals": [
+            {
+                "id": s.id,
+                "timestamp": s.timestamp.isoformat() if s.timestamp else None,
+                "symbol": s.symbol,
+                "timeframe": s.timeframe,
+                "strategy_name": s.strategy_name,
+                "direction": s.direction.value,
+                "entry_price": s.entry_price,
+                "stop_loss": s.stop_loss,
+                "take_profit": s.take_profit,
+                "confidence": s.confidence,
+                "status": s.status.value,
+                "pnl": s.pnl,
+                "pnl_pct": s.pnl_pct,
+                "risk_reward_ratio": s.risk_reward_ratio
+            } for s in signals
+        ]
+    }
+
+
+@router.get("/latest")
+async def get_latest_signals(
+    timeframe: Optional[str] = None,
+    rules: Optional[str] = None,
+    db: Session = Depends(get_db)
+):
+    """
+    Get latest signals with optional filters.
+
+    Args:
+        timeframe: Filter by timeframe (optional)
+        rules: Filter by strategy/rules (optional)
+        db: Database session
+
+    Returns:
+        Latest signals matching filters
+    """
+    query = db.query(Signal)
+
+    # Apply filters
+    if timeframe:
+        query = query.filter(Signal.timeframe == timeframe)
+
+    if rules:
+        query = query.filter(Signal.strategy_name == rules)
+
+    # Get latest signals
+    signals = query.order_by(desc(Signal.timestamp)).limit(10).all()
+
+    return {
+        "timestamp": datetime.now().isoformat(),
+        "symbol": "XAUUSD",
+        "timeframe": timeframe or "4h",
+        "current_price": None,  # Will be populated by market data if needed
+        "signals": [
+            {
+                "id": s.id,
+                "timestamp": s.timestamp.isoformat() if s.timestamp else None,
+                "direction": s.direction.value,
+                "entry_price": s.entry_price,
+                "stop_loss": s.stop_loss,
+                "take_profit": s.take_profit,
+                "confidence": s.confidence,
+                "status": s.status.value,
+                "strategy_name": s.strategy_name,
+                "risk_reward_ratio": s.risk_reward_ratio
+            } for s in signals
+        ],
+        "market_context": {
+            "trend": "neutral",
+            "volatility": "moderate",
+            "atr": 15.0
+        }
+    }
+
+
 @router.get("/", response_model=SignalList)
 async def get_signals(
     page: int = Query(1, ge=1),
@@ -164,101 +259,6 @@ async def get_signal(signal_id: int, db: Session = Depends(get_db)):
         created_at=signal.created_at,
         updated_at=signal.updated_at
     )
-
-
-@router.get("/history")
-async def get_signals_history(
-    limit: int = Query(10, ge=1, le=100),
-    db: Session = Depends(get_db)
-):
-    """
-    Get signal history with limit.
-
-    Args:
-        limit: Number of signals to return
-        db: Database session
-
-    Returns:
-        List of recent signals
-    """
-    signals = db.query(Signal).order_by(desc(Signal.timestamp)).limit(limit).all()
-
-    return {
-        "signals": [
-            {
-                "id": s.id,
-                "timestamp": s.timestamp.isoformat() if s.timestamp else None,
-                "symbol": s.symbol,
-                "timeframe": s.timeframe,
-                "strategy_name": s.strategy_name,
-                "direction": s.direction.value,
-                "entry_price": s.entry_price,
-                "stop_loss": s.stop_loss,
-                "take_profit": s.take_profit,
-                "confidence": s.confidence,
-                "status": s.status.value,
-                "pnl": s.pnl,
-                "pnl_pct": s.pnl_pct,
-                "risk_reward_ratio": s.risk_reward_ratio
-            } for s in signals
-        ]
-    }
-
-
-@router.get("/latest")
-async def get_latest_signals(
-    timeframe: Optional[str] = None,
-    rules: Optional[str] = None,
-    db: Session = Depends(get_db)
-):
-    """
-    Get latest signals with optional filters.
-
-    Args:
-        timeframe: Filter by timeframe (optional)
-        rules: Filter by strategy/rules (optional)
-        db: Database session
-
-    Returns:
-        Latest signals matching filters
-    """
-    query = db.query(Signal)
-
-    # Apply filters
-    if timeframe:
-        query = query.filter(Signal.timeframe == timeframe)
-
-    if rules:
-        query = query.filter(Signal.strategy_name == rules)
-
-    # Get latest signals
-    signals = query.order_by(desc(Signal.timestamp)).limit(10).all()
-
-    return {
-        "timestamp": datetime.now().isoformat(),
-        "symbol": "XAUUSD",
-        "timeframe": timeframe or "4h",
-        "current_price": None,  # Will be populated by market data if needed
-        "signals": [
-            {
-                "id": s.id,
-                "timestamp": s.timestamp.isoformat() if s.timestamp else None,
-                "direction": s.direction.value,
-                "entry_price": s.entry_price,
-                "stop_loss": s.stop_loss,
-                "take_profit": s.take_profit,
-                "confidence": s.confidence,
-                "status": s.status.value,
-                "strategy_name": s.strategy_name,
-                "risk_reward_ratio": s.risk_reward_ratio
-            } for s in signals
-        ],
-        "market_context": {
-            "trend": "neutral",
-            "volatility": "moderate",
-            "atr": 15.0
-        }
-    }
 
 
 @router.get("/stats/performance", response_model=PerformanceStats)
