@@ -114,11 +114,28 @@ class GoldStrategy:
         'bb_squeeze_threshold': 0.5,  # ATR multiple for squeeze detection
     }
 
-    def __init__(self, config: Optional[Dict] = None):
-        """Initialize the strategy with optional custom config."""
+    def __init__(self, config: Optional[Dict] = None, enabled_rules: Optional[List[int]] = None):
+        """
+        Initialize the strategy with optional custom config.
+
+        Args:
+            config: Optional configuration dictionary
+            enabled_rules: Optional list of rule IDs to enable (1-6)
+                          If None, uses default enabled rules
+        """
         self.config = {**self.DEFAULT_CONFIG, **(config or {})}
         self.ta: Optional[TechnicalAnalysis] = None
         self.df: Optional[pd.DataFrame] = None
+
+        # Map rule IDs to rule names for backward compatibility
+        rule_id_map = {
+            1: 'golden_fibonacci',
+            2: 'ath_retest',
+            3: 'momentum_equilibrium',
+            4: 'london_session_breakout',
+            5: 'momentum_equilibrium',  # Rule 5 is also momentum equilibrium (legacy)
+            6: 'order_block_retest',
+        }
 
         # Enable/disable individual rules
         # Only profitable strategies validated on 2023-2025 XAUUSD data
@@ -139,6 +156,18 @@ class GoldStrategy:
             'ath_retest': False,
             'bollinger_squeeze': False,
         }
+
+        # Override with enabled_rules if provided
+        if enabled_rules is not None:
+            # Disable all rules first
+            for rule in self.rules_enabled:
+                self.rules_enabled[rule] = False
+
+            # Enable only specified rules
+            for rule_id in enabled_rules:
+                rule_name = rule_id_map.get(rule_id)
+                if rule_name and rule_name in self.rules_enabled:
+                    self.rules_enabled[rule_name] = True
 
     def set_rule_enabled(self, rule_name: str, enabled: bool):
         """Enable or disable a specific rule."""

@@ -223,33 +223,52 @@ class MetaAPIConnection(MT5ConnectionBase):
         self.connection = None
 
     def connect(self) -> bool:
-        """Connect to MT5 via MetaAPI cloud"""
+        """Connect to MT5 via MetaAPI cloud (synchronous wrapper)"""
+        import asyncio
+
+        try:
+            # Create event loop if none exists
+            try:
+                loop = asyncio.get_event_loop()
+            except RuntimeError:
+                loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(loop)
+
+            # Run async connection
+            return loop.run_until_complete(self._async_connect())
+
+        except Exception as e:
+            logger.error(f"Error in connect: {e}")
+            return False
+
+    async def _async_connect(self) -> bool:
+        """Async connection to MetaAPI"""
         try:
             from metaapi_cloud_sdk import MetaApi
 
             logger.info("Initializing MetaAPI connection...")
 
             self.api = MetaApi(self.config.metaapi_token)
-            self.account = self.api.metatrader_account_api.get_account(
+            self.account = await self.api.metatrader_account_api.get_account(
                 self.config.metaapi_account_id
             )
 
             logger.info(f"Deploying account {self.config.metaapi_account_id}...")
-            self.account.deploy()
+            await self.account.deploy()
 
             logger.info("Waiting for API server to connect...")
-            self.account.wait_connected()
+            await self.account.wait_connected()
 
             logger.info("Connecting to MetaAPI RPC...")
             self.connection = self.account.get_rpc_connection()
-            self.connection.connect()
-            self.connection.wait_synchronized()
+            await self.connection.connect()
+            await self.connection.wait_synchronized()
 
             self.connected = True
             self.last_heartbeat = datetime.now()
 
             # Get account info
-            account_info = self.connection.get_account_information()
+            account_info = await self.connection.get_account_information()
             logger.info(f"Connected to MetaAPI account: {account_info['login']}")
             logger.info(f"Account balance: ${account_info['balance']:.2f}")
             logger.info(f"Account leverage: 1:{account_info['leverage']}")
@@ -291,12 +310,23 @@ class MetaAPIConnection(MT5ConnectionBase):
             return False
 
     def get_account_info(self) -> Optional[Dict[str, Any]]:
-        """Get account information from MetaAPI"""
+        """Get account information from MetaAPI (synchronous wrapper)"""
+        import asyncio
+
         if not self.is_connected():
             return None
 
         try:
-            account_info = self.connection.get_account_information()
+            loop = asyncio.get_event_loop()
+            return loop.run_until_complete(self._async_get_account_info())
+        except Exception as e:
+            logger.error(f"Error in get_account_info: {e}")
+            return None
+
+    async def _async_get_account_info(self) -> Optional[Dict[str, Any]]:
+        """Async get account information"""
+        try:
+            account_info = await self.connection.get_account_information()
             return {
                 "login": account_info.get("login"),
                 "balance": account_info.get("balance"),
@@ -313,13 +343,24 @@ class MetaAPIConnection(MT5ConnectionBase):
             return None
 
     def get_symbol_info(self, symbol: str) -> Optional[Dict[str, Any]]:
-        """Get symbol information from MetaAPI"""
+        """Get symbol information from MetaAPI (synchronous wrapper)"""
+        import asyncio
+
         if not self.is_connected():
             return None
 
         try:
-            symbol_spec = self.connection.get_symbol_specification(symbol)
-            symbol_price = self.connection.get_symbol_price(symbol)
+            loop = asyncio.get_event_loop()
+            return loop.run_until_complete(self._async_get_symbol_info(symbol))
+        except Exception as e:
+            logger.error(f"Error in get_symbol_info: {e}")
+            return None
+
+    async def _async_get_symbol_info(self, symbol: str) -> Optional[Dict[str, Any]]:
+        """Async get symbol information"""
+        try:
+            symbol_spec = await self.connection.get_symbol_specification(symbol)
+            symbol_price = await self.connection.get_symbol_price(symbol)
 
             return {
                 "name": symbol,

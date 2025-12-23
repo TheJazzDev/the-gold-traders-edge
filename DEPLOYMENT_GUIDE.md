@@ -1,383 +1,709 @@
-# Deployment Guide - The Gold Trader's Edge
+# 🚀 Deployment Guide - The Gold Trader's Edge
 
-Complete guide for deploying the full stack application.
+**Complete step-by-step guide to deploy and start generating real-time gold trading signals**
 
 ---
 
-## 🎯 Deployment Architecture
+## 🎯 System Architecture
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│                         Users                               │
+│                    USERS (Traders)                          │
 └────────────────┬────────────────────────────────────────────┘
                  │
     ┌────────────┴────────────┐
     │                         │
     ▼                         ▼
-┌─────────┐              ┌──────────┐
-│  Vercel │              │ Railway  │
-│ (Web UI)│              │ (Backend)│
-└─────────┘              └─────┬────┘
-                               │
-                    ┌──────────┴──────────┐
-                    │                     │
-                    ▼                     ▼
-            ┌──────────────┐      ┌──────────────┐
-            │   API Server │      │    Signal    │
-            │   (FastAPI)  │      │   Generator  │
-            └──────┬───────┘      └──────┬───────┘
-                   │                     │
-                   │   ┌─────────────────┘
+┌─────────────┐          ┌──────────────────┐
+│   VERCEL    │          │     RAILWAY      │
+│ (Frontend)  │◄─────────┤   (Backend)      │
+│  ✅ DEPLOYED│   API    │   🔶 TO DEPLOY   │
+└─────────────┘          └─────────┬────────┘
+                                   │
+              Supervisor (runs both services together)
+                                   │
+                    ┌──────────────┴──────────────┐
+                    │                             │
+                    ▼                             ▼
+            ┌──────────────┐            ┌──────────────────┐
+            │  FastAPI     │            │ Signal Generator │
+            │  (Port 8000) │            │ (Background)     │
+            └──────┬───────┘            └──────┬───────────┘
+                   │                           │
+                   │   ┌───────────────────────┘
                    │   │
                    ▼   ▼
-            ┌──────────────┐
-            │   SQLite DB  │
-            │   (Signals)  │
-            └──────────────┘
+            ┌──────────────────┐
+            │ SQLite Database  │
+            │ (/data/signals.db)│
+            └──────────────────┘
 ```
+
+**Key Points:**
+✅ **Frontend** (Vercel) - Already deployed
+🔶 **Backend** (Railway) - Need to deploy (API + Signal Generator run together via Supervisor)
+📊 **Database** - SQLite with persistent volume (automatically handled)
 
 ---
 
-## 📦 Part 1: Deploy Backend (Railway)
+## 📦 STEP 1: Deploy Backend to Railway
 
-### Step 1: Prepare Your Repository
+### What You'll Deploy:
+One Railway service running **both** API and Signal Generator together using Supervisor (already configured ✅)
 
-1. **Ensure all files are committed:**
+### 1A. Prepare Repository
+
 ```bash
-cd /path/to/the-gold-traders-edge
+# Navigate to project
+cd /Users/jazzdev/Documents/Programming/the-gold-traders-edge
+
+# Commit pending changes
 git add .
-git commit -m "Prepare for deployment"
-git push origin main
+git commit -m "Ready for production deployment"
+git push origin phase-2/demo-trading  # or merge to main first
 ```
 
-2. **Verify Docker files exist:**
-- ✅ `Dockerfile`
-- ✅ `docker-compose.prod.yml`
-- ✅ `.dockerignore`
-- ✅ `railway.json`
+### 1B. Deploy via Railway Dashboard
 
-### Step 2: Deploy to Railway
+**Option A: Railway Dashboard (Easiest)**
 
-1. **Go to Railway:** https://railway.app
-2. **Sign up/Login** with GitHub
-3. **New Project** → **Deploy from GitHub repo**
-4. **Select:** `the-gold-traders-edge` repository
-5. **Railway will auto-detect** the Dockerfile
+1. Go to https://railway.app
+2. Sign up/Login with GitHub
+3. Click **"New Project"**
+4. Select **"Deploy from GitHub repo"**
+5. Choose: `the-gold-traders-edge`
+6. Railway auto-detects:
+   - ✅ Dockerfile
+   - ✅ railway.json
+   - ✅ Supervisor configuration
+7. Click **"Deploy"**
 
-### Step 3: Configure Environment Variables
-
-In Railway dashboard, add these environment variables:
+**Option B: Railway CLI (For advanced users)**
 
 ```bash
-# API Configuration
-API_V1_STR=/v1
-PROJECT_NAME=Gold Trader's Edge API
-CORS_ORIGINS=https://your-vercel-app.vercel.app
+# Install Railway CLI
+npm i -g @railway/cli
 
-# Database
+# Login
+railway login
+
+# Initialize & deploy
+railway init
+railway up
+```
+
+### 1C. Add Persistent Volume for Database
+
+**IMPORTANT:** Add this before first deployment!
+
+1. In Railway dashboard → Your project
+2. Go to **Settings** → **Volumes**
+3. Click **"New Volume"**
+   - **Mount Path:** `/data`
+   - This ensures signals persist across deployments
+
+### 1D. Configure Environment Variables
+
+In Railway dashboard → **Variables** → Add these:
+
+```bash
+# ============================================================================
+# CORE SETTINGS
+# ============================================================================
+ENVIRONMENT=production
 DATABASE_URL=sqlite:////data/signals.db
 
-# Data Feed
+# ============================================================================
+# API CONFIGURATION
+# ============================================================================
+API_V1_STR=/v1
+PROJECT_NAME=Gold Trader's Edge API
+API_HOST=0.0.0.0
+PORT=8000
+
+# CORS - Update with YOUR Vercel URL
+CORS_ORIGINS=https://your-app-name.vercel.app,http://localhost:3000
+
+# ============================================================================
+# DATA FEED (Yahoo Finance - Free, 15min delay)
+# ============================================================================
 DATAFEED_TYPE=yahoo
 SYMBOL=XAUUSD
 TIMEFRAME=4H
 
-# API Server
-PORT=8000
-API_HOST=0.0.0.0
+# ============================================================================
+# SIGNAL GENERATION
+# ============================================================================
+ENABLE_DATABASE=true
+ENABLE_LOGGER=true
+ENABLE_CONSOLE=true
+MIN_RR_RATIO=1.5
+HEARTBEAT_INTERVAL=5
+
+# ============================================================================
+# SECURITY (Generate new secret!)
+# ============================================================================
+SECRET_KEY=generate-this-with-openssl-rand-hex-32
+ALGORITHM=HS256
+ACCESS_TOKEN_EXPIRE_MINUTES=1440
 ```
 
-### Step 4: Add MetaAPI Credentials (After $10 deposit)
-
+**Generate SECRET_KEY:**
 ```bash
-# MetaAPI (Add these after you deposit $10)
-MT5_CONNECTION_TYPE=metaapi
-METAAPI_TOKEN=your_token_here
-METAAPI_ACCOUNT_ID=your_account_id_here
-MT5_SYMBOL=XAUUSD
+openssl rand -hex 32
+```
+Copy the output and paste it as `SECRET_KEY` value.
 
-# Risk Management
-MAX_RISK_PER_TRADE=0.01
-MAX_POSITIONS=2
-MAX_DAILY_LOSS=0.03
-POSITION_SIZE_MODE=risk_based
+### 1E. Get Your Railway URL
+
+After deployment completes:
+
+1. Railway assigns a domain like: `https://the-gold-traders-edge-production.up.railway.app`
+2. Copy this URL - you'll need it for Step 2
+3. Test it works:
+   ```bash
+   curl https://your-railway-url.up.railway.app/health
+   ```
+
+   Expected response:
+   ```json
+   {
+     "status": "healthy",
+     "service": "Gold Trader's Edge API",
+     "version": "1.0.0"
+   }
+   ```
+
+### 1F. Verify Both Services Are Running
+
+Check Railway logs (Deployments → View Logs):
+
+You should see:
+```
+[program:api] Started
+[program:signal-generator] Started
+📊 GOLD TRADER'S EDGE - REAL-TIME SIGNAL SERVICE
+⚙️  Configuration loaded
+📡 Data feed connected: Yahoo Finance
 ```
 
-### Step 5: Deploy Signal Generator Service
-
-Railway doesn't support multiple services in one deployment easily. **Options:**
-
-**Option A: Run Both in One Container (Recommended for Railway)**
-- Modify start command to run both API + Signal Generator
-- Uses process manager (like supervisord)
-
-**Option B: Create Separate Railway Services**
-- Deploy API as one service
-- Deploy Signal Generator as another service
-- Both connect to same database volume
-
-**Option C: Use Different Platform for Services**
-- Railway: API only
-- Render/Fly.io: Signal Generator
-
-**I recommend Option A for simplicity. Want me to set that up?**
-
-### Step 6: Get Your API URL
-
-After deployment:
-1. Railway will give you a URL: `https://your-app.railway.app`
-2. Test it: `https://your-app.railway.app/health`
-3. Save this URL for Vercel configuration
+**✅ Backend deployed successfully!**
 
 ---
 
-## 🌐 Part 2: Deploy Frontend (Vercel)
+## 🌐 STEP 2: Update Frontend with Production API
 
-### Step 1: Prepare Web App
+Since your frontend is **already deployed on Vercel** ✅, you just need to update the API URL.
 
-1. **Update API URL in web app:**
+### 2A. Update Vercel Environment Variables
 
+1. Go to https://vercel.com → Your project
+2. Navigate to **Settings** → **Environment Variables**
+3. Find or add: `NEXT_PUBLIC_API_URL`
+4. Set value to: `https://your-railway-url.up.railway.app` (from Step 1E)
+5. Click **Save**
+
+### 2B. Redeploy Frontend
+
+**Option A: Via Vercel Dashboard**
+1. Go to **Deployments** tab
+2. Click the **⋯** menu on latest deployment
+3. Select **"Redeploy"**
+4. Check **"Use existing Build Cache"** (faster)
+5. Click **"Redeploy"**
+
+**Option B: Via Git Push**
 ```bash
-cd apps/web
-```
-
-Create `.env.production`:
-```bash
-NEXT_PUBLIC_API_URL=https://your-app.railway.app
-```
-
-2. **Commit changes:**
-```bash
-git add .
-git commit -m "Add production API URL"
+# Make a small change to trigger deployment
+git commit --allow-empty -m "Update production API URL"
 git push
 ```
 
-### Step 2: Deploy to Vercel
+### 2C. Update CORS on Railway
 
-1. **Go to Vercel:** https://vercel.com
-2. **Import Project** → Select your GitHub repo
-3. **Root Directory:** `apps/web`
-4. **Framework Preset:** Next.js (auto-detected)
-5. **Environment Variables:**
-```bash
-NEXT_PUBLIC_API_URL=https://your-app.railway.app
-```
+Now that you have your Vercel URL, update Railway:
 
-6. **Deploy!**
+1. Go to Railway dashboard → Your project → **Variables**
+2. Update `CORS_ORIGINS` to:
+   ```
+   https://your-vercel-app.vercel.app,http://localhost:3000
+   ```
+3. Railway will auto-redeploy
 
-### Step 3: Update CORS
-
-After Vercel deployment:
-1. Get your Vercel URL: `https://your-app.vercel.app`
-2. Update Railway environment variable:
-```bash
-CORS_ORIGINS=https://your-app.vercel.app,http://localhost:3000
-```
-
-3. Redeploy Railway service
+**✅ Frontend connected to production API!**
 
 ---
 
-## 🔧 Part 3: Running Multiple Services (Advanced)
+## 🎯 STEP 3: Verify Real-Time Signal Flow
 
-### Option 1: Modify Dockerfile to Run Both Services
+### 3A. Test API Endpoints
 
-Update `Dockerfile` CMD:
+```bash
+# Replace with your Railway URL
+API_URL="https://your-railway-url.up.railway.app"
 
-```dockerfile
-# Install supervisor
-RUN pip install supervisor
+# Health check
+curl $API_URL/health
 
-# Copy supervisor config
-COPY supervisord.conf /etc/supervisor/conf.d/supervisord.conf
+# Get signals (might be empty initially)
+curl $API_URL/v1/signals?limit=10
 
-# Run supervisor
-CMD ["/usr/bin/supervisord", "-c", "/etc/supervisor/conf.d/supervisord.conf"]
+# Get signal stats
+curl $API_URL/v1/signals/stats
 ```
 
-Create `supervisord.conf`:
-```ini
-[supervisord]
-nodaemon=true
+### 3B. Monitor Signal Generation
 
-[program:api]
-command=python -m uvicorn api.src.main:app --host 0.0.0.0 --port 8000
-autostart=true
-autorestart=true
-stdout_logfile=/dev/stdout
-stderr_logfile=/dev/stderr
+**Check Railway Logs:**
 
-[program:signals]
-command=python /app/engine/run_signal_service.py
-autostart=true
-autorestart=true
-stdout_logfile=/dev/stdout
-stderr_logfile=/dev/stderr
+Go to Railway dashboard → Deployments → **View Logs**
+
+Look for these messages:
+
+```
+✅ Good signs:
+[program:signal-generator] 📊 Service started, monitoring XAUUSD on 4H
+[program:signal-generator] ⏰ Heartbeat: Service running, checking for candle close...
+[program:signal-generator] 📊 Candle close detected at 2025-12-23 12:00:00
+[program:signal-generator] ✅ New signal generated: BUY XAUUSD @ 2650.00
+[program:signal-generator] 💾 Signal saved to database
+
+❌ Warning signs:
+ERROR: Failed to connect to data feed
+ERROR: Database connection failed
+WARNING: No candle close detected yet (this is normal between candle closes)
 ```
 
-### Option 2: Use Railway's Multiple Services
+### 3C. Test Frontend Connection
 
-1. Create `railway.json` for each service
-2. Deploy API service
-3. Deploy Signal service separately
-4. Both share database via Railway volumes
+1. Open your Vercel app: `https://your-app.vercel.app`
+2. Check dashboard status indicator (should show "API Connected")
+3. Verify signals list loads (might be empty if no signals generated yet)
+4. Open browser console (F12) - should see no CORS errors
+
+### 3D. Wait for First Signal
+
+**Important:** Signals are generated on **4H candle closes**
+
+XAUUSD 4H candles close at:
+- 00:00 UTC
+- 04:00 UTC
+- 08:00 UTC
+- 12:00 UTC
+- 16:00 UTC
+- 20:00 UTC
+
+**Timeline:**
+```
+Deploy backend → Wait for next 4H close → Signal generated → Appears on dashboard
+                 (up to 4 hours)         (instant)          (within 30s)
+```
+
+**✅ System fully operational!**
 
 ---
 
-## 📊 Part 4: Monitoring & Maintenance
+## 📊 STEP 4: How Real-Time Signals Work
 
-### Health Checks
+### Complete Data Flow Diagram
 
-**API Health:**
+```
+┌───────────────────────────────────────────────────────────────┐
+│                    YAHOO FINANCE                              │
+│          (Free market data, 15min delay)                      │
+└────────────────────────┬──────────────────────────────────────┘
+                         │
+                         │ Every 4H candle close
+                         │ (00:00, 04:00, 08:00, 12:00, 16:00, 20:00 UTC)
+                         │
+                         ▼
+┌───────────────────────────────────────────────────────────────┐
+│               SIGNAL GENERATOR (Railway)                      │
+│  1. Detect candle close                                       │
+│  2. Analyze with Momentum Equilibrium (Rule 5)                │
+│  3. Check: momentum reversal + trend alignment                │
+│  4. Calculate: Entry, SL, TP, R:R                             │
+│  5. Validate: R:R >= 1.5                                      │
+└────────────────────────┬──────────────────────────────────────┘
+                         │
+                         │ Save signal
+                         │
+                         ▼
+┌───────────────────────────────────────────────────────────────┐
+│              SQLITE DATABASE (/data/signals.db)               │
+│  Table: signals                                               │
+│  - signal_id, timestamp, direction, symbol                    │
+│  - entry_price, stop_loss, take_profit                        │
+│  - risk_reward_ratio, strategy                                │
+│  - status (generated/executed/closed)                         │
+└────────────┬──────────────────────────────────────────────────┘
+             │                              │
+             │ Read signals                 │ (Future: Demo trading)
+             ▼                              ▼
+┌─────────────────────────┐    ┌───────────────────────────────┐
+│   FASTAPI (Railway)     │    │ TRADE SUBSCRIBER (Future)     │
+│   GET /v1/signals       │    │ - Auto-execute on MetaAPI     │
+│   - Query database      │    │ - Track positions             │
+│   - Return JSON         │    │ - Update signal status        │
+│   - CORS enabled        │    └───────────────────────────────┘
+└────────────┬────────────┘
+             │
+             │ HTTPS REST API
+             │
+             ▼
+┌───────────────────────────────────────────────────────────────┐
+│            NEXT.JS DASHBOARD (Vercel)                         │
+│  1. Auto-refresh every 30 seconds                             │
+│  2. Fetch: /v1/signals?limit=20                               │
+│  3. Display: Latest signals in table                          │
+│  4. Show: Entry, SL, TP, R:R, Status                          │
+│  5. Calculate: Performance stats                              │
+└───────────────────────────────────────────────────────────────┘
+             │
+             ▼
+┌───────────────────────────────────────────────────────────────┐
+│                    USER (Trader)                              │
+│  - Sees signals in real-time (max 30s delay)                  │
+│  - Can manually execute on MT5                                │
+│  - Tracks performance                                         │
+└───────────────────────────────────────────────────────────────┘
+```
+
+### Signal Generation Process
+
+**Every 4 hours, the system:**
+
+1. **Fetches latest candle data** from Yahoo Finance
+2. **Detects candle close** (4H timeframe)
+3. **Runs strategy analysis:**
+   - Calculate momentum indicators
+   - Detect trend direction
+   - Find entry points
+   - Calculate stop loss (based on swing low/high)
+   - Calculate take profit (based on R:R ratio)
+4. **Validates signal:**
+   - R:R ratio >= 1.5
+   - No duplicate signals for same setup
+   - Entry price within reasonable range
+5. **Saves to database** with all details
+6. **Logs to console** and file
+
+**API serves signals:**
+
+1. **Runs 24/7** alongside signal generator
+2. **Reads from same database** (SQLite file)
+3. **Exposes REST endpoints:**
+   - `/v1/signals` - Get all signals
+   - `/v1/signals/{id}` - Get specific signal
+   - `/v1/signals/stats` - Get performance stats
+4. **CORS enabled** for Vercel domain
+
+**Dashboard displays signals:**
+
+1. **Auto-refresh every 30s** (configurable)
+2. **Fetches latest signals** via API
+3. **Updates UI** with new signals
+4. **Shows real-time** performance metrics
+
+### Why Signals Appear in Real-Time
+
+```
+Time: 12:00:00 UTC → 4H candle closes
+Time: 12:00:05 UTC → Signal generator detects close
+Time: 12:00:10 UTC → Strategy analysis completes
+Time: 12:00:11 UTC → Signal saved to database
+Time: 12:00:15 UTC → User's dashboard auto-refreshes
+Time: 12:00:16 UTC → API returns new signal
+Time: 12:00:16 UTC → Signal appears on dashboard
+
+Total delay: ~16 seconds
+```
+
+**Maximum delay:** 30 seconds (dashboard refresh interval)
+
+---
+
+## ✅ STEP 5: Post-Deployment Checklist
+
+### Immediate Verification (Do this now):
+
+- [ ] Railway deployment succeeded
+- [ ] API health check passes: `curl https://your-railway-url.up.railway.app/health`
+- [ ] Vercel environment variable updated with Railway URL
+- [ ] Frontend redeployed successfully
+- [ ] CORS configured with Vercel URL
+- [ ] Both services running in Railway logs
+
+### Within First 4 Hours (Wait for candle close):
+
+- [ ] Signal generator heartbeat in logs (every 5 min)
+- [ ] No errors in Railway logs
+- [ ] Dashboard loads and shows "API Connected"
+- [ ] Next 4H candle close occurs
+- [ ] Signal generated and appears in logs
+- [ ] Signal appears on dashboard (within 30s)
+
+### Optional - Enable Demo Trading (When ready):
+
+- [ ] Deposit $10 to MetaAPI account
+- [ ] Get MetaAPI token and account ID
+- [ ] Add to Railway environment variables:
+  - `METAAPI_TOKEN`
+  - `METAAPI_ACCOUNT_ID`
+  - `MT5_CONNECTION_TYPE=metaapi`
+- [ ] Redeploy Railway service
+- [ ] Verify MT5 connection in logs
+- [ ] Monitor automatic trade execution
+
+---
+
+## 💰 Monthly Cost Breakdown
+
+### Current Setup (Signal Generation Only):
+- **Vercel:** $0 (Free tier - perfect for this)
+- **Railway:** $20/month (Developer plan for 24/7 uptime)
+- **Yahoo Finance:** $0 (Free API)
+- **Total:** **$20/month**
+
+### With Demo Trading (Future):
+- **Vercel:** $0
+- **Railway:** $20/month
+- **MetaAPI:** $4/month + $10 one-time deposit
+- **Total:** **$24/month** (+ $10 initial)
+
+**Note:** Railway Hobby plan ($5/mo) only includes 500 hours. Running 24/7 = 720 hours, so Developer plan is required.
+
+---
+
+## 🔍 Troubleshooting Guide
+
+### Problem: API Returns 404
+
+**Symptoms:**
 ```bash
 curl https://your-app.railway.app/health
+# 404 Not Found
 ```
 
-**Expected Response:**
+**Fix:**
+1. Check Railway logs for startup errors
+2. Verify Dockerfile builds successfully
+3. Ensure `railway.json` has correct start command
+4. Check `PORT` environment variable is set
+
+### Problem: Signal Generator Not Running
+
+**Symptoms:**
+- No heartbeat logs every 5 minutes
+- No `[program:signal-generator]` in logs
+
+**Fix:**
+1. Check Railway logs for errors:
+   ```
+   [program:signal-generator] FATAL: Exited too quickly
+   ```
+2. Verify environment variables:
+   - `DATAFEED_TYPE=yahoo`
+   - `DATABASE_URL=sqlite:////data/signals.db`
+3. Ensure `/data` volume is mounted
+4. Check supervisor config in logs
+
+### Problem: CORS Errors on Dashboard
+
+**Symptoms:**
+```
+Access to fetch has been blocked by CORS policy
+```
+
+**Fix:**
+1. Verify `CORS_ORIGINS` in Railway includes exact Vercel URL
+2. Must include `https://` (not `http://`)
+3. No trailing slash
+4. Example: `CORS_ORIGINS=https://gold-edge.vercel.app,http://localhost:3000`
+5. Redeploy Railway after changing
+
+### Problem: No Signals Generated
+
+**Symptoms:**
+- API returns empty array: `{"signals": []}`
+- Dashboard shows "No signals yet"
+
+**Possible Causes:**
+1. **Too early** - Need to wait for 4H candle close
+2. **No valid signals** - Strategy didn't find entry (normal)
+3. **Database error** - Check logs for write errors
+
+**Fix:**
+1. Check time - signals only generate at: 00:00, 04:00, 08:00, 12:00, 16:00, 20:00 UTC
+2. Wait for next candle close
+3. Check logs for "Signal generated" message
+4. Verify `/data` volume has write permissions
+
+### Problem: Database Connection Failed
+
+**Symptoms:**
+```
+ERROR: Could not connect to database
+sqlite3.OperationalError: unable to open database file
+```
+
+**Fix:**
+1. Check `/data` volume is created and mounted
+2. Verify `DATABASE_URL=sqlite:////data/signals.db` (4 slashes!)
+3. Railway volume mount path must be exactly `/data`
+
+### Problem: Yahoo Finance Connection Failed
+
+**Symptoms:**
+```
+ERROR: Failed to fetch data from Yahoo Finance
+ConnectionError: Unable to connect
+```
+
+**Fix:**
+1. Yahoo Finance might be rate-limiting
+2. Increase `HEARTBEAT_INTERVAL` to 10 minutes
+3. Check Railway outbound network connectivity
+4. Try different data feed: `DATAFEED_TYPE=metaapi` (requires account)
+
+---
+
+## 📊 Monitoring & Maintenance
+
+### Daily Checks (First Week):
+
+1. **Railway Dashboard** → View Logs
+   - Look for errors or crashes
+   - Verify heartbeat every 5 minutes
+   - Check signal generation at candle closes
+
+2. **Vercel Dashboard** → Deployments
+   - Check for build failures
+   - Monitor error rates in Analytics
+
+3. **Test API Health:**
+   ```bash
+   curl https://your-railway-url.up.railway.app/health
+   ```
+
+### Weekly Checks (Ongoing):
+
+1. **Review generated signals:**
+   ```bash
+   curl https://your-railway-url.up.railway.app/v1/signals?limit=50
+   ```
+
+2. **Check database size:**
+   - Railway dashboard → Volumes
+   - Should grow slowly (few KB per signal)
+
+3. **Monitor Railway usage:**
+   - Ensure within plan limits
+   - Check monthly cost forecast
+
+### Database Backup (Monthly):
+
+```bash
+# Using Railway CLI
+railway link  # Link to your project
+railway volumes  # List volumes
+railway run bash  # Open shell in container
+
+# Inside container:
+cp /data/signals.db /tmp/backup-$(date +%Y%m%d).db
+# Download via Railway dashboard
+```
+
+---
+
+## 🚀 Next Steps After Deployment
+
+### Immediate (Today):
+1. ✅ Complete deployment (Steps 1-3 above)
+2. ✅ Verify system is running
+3. ✅ Wait for first signal (up to 4 hours)
+
+### This Week:
+1. Monitor signal generation for 7 days
+2. Verify all signals appear on dashboard
+3. Check signal quality and frequency
+4. Review Railway logs for any issues
+
+### This Month:
+1. Analyze 30 days of signal performance
+2. Decide if strategy needs tuning
+3. Consider enabling demo trading
+4. Evaluate switching to MetaAPI for real-time data
+
+### Future Enhancements:
+1. **Demo Trading** - Auto-execute signals on MT5 demo account
+2. **Mobile App** - React Native app with push notifications
+3. **Advanced Analytics** - Performance reports, win rate tracking
+4. **Telegram Bot** - Receive signals via Telegram
+5. **Multi-Strategy** - Add Rules 1-4 for more signals
+6. **Live Trading** - After 30-day validation, switch to real account
+
+---
+
+## 🆘 Getting Help
+
+**Check Logs First:**
+- Railway: Dashboard → Deployments → View Logs
+- Vercel: Dashboard → Deployments → Function Logs
+
+**Common Issues:**
+- 90% are environment variable problems
+- Check spelling and format carefully
+- Ensure URLs have no trailing slashes
+
+**Still Stuck?**
+1. Copy exact error message from logs
+2. Check environment variables match guide
+3. Verify volume mount path is `/data`
+4. Test locally with Docker first
+
+---
+
+## 🎉 Success Criteria
+
+**You know deployment worked when:**
+
+✅ Railway logs show:
+```
+[program:api] Started
+[program:signal-generator] Started
+⚙️  Configuration loaded
+📡 Data feed connected: Yahoo Finance
+⏰ Heartbeat: Service running...
+```
+
+✅ API health check returns:
 ```json
-{
-  "status": "healthy",
-  "service": "Gold Trader's Edge API",
-  "version": "1.0.0"
-}
+{"status": "healthy"}
 ```
 
-### View Logs
+✅ Dashboard shows:
+- "API Connected" status
+- Service status: "Running"
+- Signals list loads (empty is OK initially)
 
-**Railway:**
-- Dashboard → Your Project → Deployments → View Logs
-
-**Check Signal Generation:**
-```bash
-# In Railway logs, look for:
-"Signal generated"
-"Candle processed"
-"Signal saved to database"
+✅ After 4H candle close:
+```
+[program:signal-generator] ✅ New signal generated
+[program:signal-generator] 💾 Signal saved to database
 ```
 
-### Database Backup
-
-Railway provides automatic backups, but you can also:
-
-1. **Download database:**
-```bash
-# From Railway CLI
-railway run python -c "import shutil; shutil.copy('/data/signals.db', '/tmp/backup.db')"
-```
-
-2. **Schedule backups** (add to your service):
-```python
-# cron job to backup database daily
-```
+✅ Dashboard auto-refreshes and shows new signal
 
 ---
 
-## 🚀 Part 5: Post-Deployment Checklist
-
-### Immediately After Deployment:
-
-- [ ] API health check passes
-- [ ] Vercel site loads
-- [ ] Web app can fetch data from API
-- [ ] CORS configured correctly
-- [ ] Environment variables set
-
-### Within 24 Hours:
-
-- [ ] Signal generator running (check logs)
-- [ ] First signal generated (check database)
-- [ ] Web dashboard shows signal
-- [ ] No errors in logs
-
-### After MetaAPI Deposit:
-
-- [ ] Add METAAPI credentials to Railway
-- [ ] Deploy demo trading service
-- [ ] Verify MT5 connection
-- [ ] Monitor first trade execution
+**Deployment Date:** _________
+**Railway URL:** _________
+**Vercel URL:** _________
+**First Signal Generated:** _________
 
 ---
 
-## 💰 Cost Breakdown
-
-### Free Tier (Testing):
-- **Vercel:** Free (hobby plan)
-- **Railway:** $5/month (500 hours free)
-- **Total:** $5/month
-
-### With MetaAPI (Live Trading):
-- **Vercel:** Free
-- **Railway:** $5-10/month
-- **MetaAPI:** $2.10/month
-- **Total:** ~$7-12/month
-
----
-
-## 🔍 Troubleshooting
-
-### API Not Responding
-
-**Check:**
-1. Railway logs for errors
-2. Environment variables set correctly
-3. Database path accessible
-4. Port configuration
-
-**Fix:**
-```bash
-# Redeploy
-railway up --detach
-```
-
-### Signal Generator Not Running
-
-**Check:**
-1. Process is running in logs
-2. Yahoo Finance connection working
-3. Database writable
-
-**Fix:**
-- Check DATAFEED_TYPE is set to 'yahoo'
-- Verify database path has write permissions
-
-### CORS Errors
-
-**Check:**
-1. CORS_ORIGINS includes your Vercel URL
-2. URL includes https:// (not http://)
-
-**Fix:**
-```bash
-# Update Railway env var
-CORS_ORIGINS=https://exact-vercel-url.vercel.app
-```
-
----
-
-## 📝 Next Steps
-
-1. **Deploy API to Railway** ← Start here
-2. **Deploy Web to Vercel**
-3. **Test end-to-end**
-4. **Add MetaAPI credentials** (after $10 deposit)
-5. **Enable demo trading service**
-6. **Monitor for 30 days**
-
----
-
-## 🆘 Support
-
-**Issues?**
-- Check Railway/Vercel logs first
-- Review environment variables
-- Test locally with Docker first
-- Check GitHub issues
-
-**Ready to deploy?**
-Let me know which option you want for running multiple services!
-
----
-
-*Last Updated: December 22, 2025*
-*Deployment Strategy: Railway + Vercel*
+*Guide Version: 2.0*
+*Last Updated: December 23, 2025*
+*Deployment Stack: Railway (Backend) + Vercel (Frontend) + SQLite (Database)*

@@ -120,7 +120,8 @@ class PositionManager:
             logger.error(f"Error updating positions: {e}")
 
     def _get_mt5_positions(self) -> Optional[List[Any]]:
-        """Get all open positions from MT5"""
+        """Get all open positions from MT5 (synchronous wrapper)"""
+        import asyncio
         try:
             if isinstance(self.connection, DirectMT5Connection):
                 mt5 = self.connection.mt5
@@ -128,14 +129,29 @@ class PositionManager:
                 return list(positions) if positions else []
 
             elif isinstance(self.connection, MetaAPIConnection):
-                connection = self.connection.connection
-                positions = connection.get_positions()
-                return positions if positions else []
+                # MetaAPI returns coroutine, need to await it
+                try:
+                    loop = asyncio.get_event_loop()
+                except RuntimeError:
+                    loop = asyncio.new_event_loop()
+                    asyncio.set_event_loop(loop)
+
+                return loop.run_until_complete(self._async_get_metaapi_positions())
 
             return None
 
         except Exception as e:
             logger.error(f"Error getting MT5 positions: {e}")
+            return None
+
+    async def _async_get_metaapi_positions(self) -> Optional[List[Any]]:
+        """Get MetaAPI positions asynchronously"""
+        try:
+            connection = self.connection.connection
+            positions = await connection.get_positions()
+            return positions if positions else []
+        except Exception as e:
+            logger.error(f"Error getting MetaAPI positions: {e}")
             return None
 
     def _get_position_ticket(self, position) -> int:
