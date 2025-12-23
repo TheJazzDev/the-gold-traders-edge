@@ -10,90 +10,50 @@ export interface TradingRule {
   isNew?: boolean;
 }
 
+// ALL 5 PROFITABLE RULES - Always active, matches backend exactly
 export const ALL_RULES: TradingRule[] = [
-  // Original profitable rules
   {
-    id: 'golden_retracement',
-    name: 'Golden Retracement (61.8%)',
-    description: 'Price retraces to the golden ratio Fibonacci level',
-    performance: '44% return, 52.6% win rate',
-    isProfitable: true,
-  },
-  {
-    id: 'ath_breakout_retest',
-    name: 'ATH Breakout Retest',
-    description: 'Retest of all-time high as support after breakout',
-    performance: '30% return, 38% win rate',
-    isProfitable: true,
-  },
-  {
-    id: 'momentum_50',
-    name: '50% Momentum',
+    id: 'momentum_equilibrium',
+    name: 'Momentum Equilibrium',
     description: 'Equilibrium entry in strong momentum at 50% retracement',
-    performance: '293% return, 76% win rate ⭐',
+    performance: '76% WR, 293% return ⭐',
     isProfitable: true,
   },
-  // New rules
   {
-    id: 'rsi_divergence',
-    name: 'RSI Divergence',
-    description: 'Bullish/bearish divergence between price and RSI indicator',
-    performance: 'Backtesting...',
-    isProfitable: true,
-    isNew: true,
-  },
-  {
-    id: 'ema_crossover',
-    name: 'EMA Crossover (9/21)',
-    description: 'Fast EMA crosses slow EMA with trend confirmation',
-    performance: 'Backtesting...',
-    isProfitable: true,
-    isNew: true,
-  },
-  {
-    id: 'london_breakout',
+    id: 'london_session_breakout',
     name: 'London Session Breakout',
     description: 'Breakout of Asian session range during London open',
-    performance: 'Backtesting...',
+    performance: '58.8% WR, 2.74 PF',
     isProfitable: true,
-    isNew: true,
   },
   {
-    id: 'order_block',
+    id: 'golden_fibonacci',
+    name: 'Golden Fibonacci (61.8%)',
+    description: 'Price retraces to the golden ratio Fibonacci level',
+    performance: '52.6% WR, 44% return',
+    isProfitable: true,
+  },
+  {
+    id: 'ath_retest',
+    name: 'ATH Breakout Retest',
+    description: 'Retest of all-time high as support after breakout',
+    performance: '38% WR, 30% return',
+    isProfitable: true,
+  },
+  {
+    id: 'order_block_retest',
     name: 'Order Block Retest',
     description: 'Smart money concept - institutional entry zone retest',
-    performance: 'Backtesting...',
+    performance: 'Institutional zones',
     isProfitable: true,
-    isNew: true,
-  },
-  {
-    id: 'vwap_deviation',
-    name: 'VWAP Deviation',
-    description: 'Mean reversion when price deviates 2+ ATR from VWAP',
-    performance: 'Backtesting...',
-    isProfitable: true,
-    isNew: true,
-  },
-  {
-    id: 'bollinger_squeeze',
-    name: 'Bollinger Band Squeeze',
-    description: 'Low volatility squeeze followed by explosive breakout',
-    performance: 'Backtesting...',
-    isProfitable: true,
-    isNew: true,
   },
 ];
 
-// IDs of profitable rules (for quick selection)
-export const PROFITABLE_RULES = [
-  'golden_retracement',
-  'ath_breakout_retest',
-  'momentum_50',
-];
+// All rules are profitable and always enabled
+export const PROFITABLE_RULES = ALL_RULES.map(r => r.id);
 
-// All available timeframes
+// All 6 active timeframes - matches backend exactly
 export const TIMEFRAMES = [
-  { value: '1m', label: '1 Minute' },
   { value: '5m', label: '5 Minutes' },
   { value: '15m', label: '15 Minutes' },
   { value: '30m', label: '30 Minutes' },

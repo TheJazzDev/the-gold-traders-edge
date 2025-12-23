@@ -17,19 +17,19 @@ export function RuleSelector({
 }: RuleSelectorProps) {
   return (
     <div className='lg:col-span-2 space-y-3'>
-      <div className='flex items-center justify-between'>
-        <label className='block text-sm font-semibold text-amber-300'>
-          Trading Rules ({selectedRules.length} selected)
-        </label>
+      <div className='flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2'>
+        <div>
+          <label className='block text-sm font-semibold text-amber-300'>
+            Trading Rules ({selectedRules.length} selected for backtest)
+          </label>
+          <p className='text-xs text-green-400 mt-1'>
+            ✅ All 5 rules are ALWAYS active in live trading
+          </p>
+        </div>
         <div className='flex gap-2'>
           <button
-            onClick={onSelectProfitable}
-            className='text-xs px-2 sm:px-3 py-1 bg-green-500/20 text-green-300 rounded-full hover:bg-green-500/30 transition-all border border-green-500/30'>
-            Profitable Only
-          </button>
-          <button
             onClick={onSelectAll}
-            className='text-xs px-2 sm:px-3 py-1 bg-blue-500/20 text-blue-300 rounded-full hover:bg-blue-500/30 transition-all border border-blue-500/30'>
+            className='text-xs px-2 sm:px-3 py-1 bg-amber-500/20 text-amber-300 rounded-full hover:bg-amber-500/30 transition-all border border-amber-500/30'>
             Select All
           </button>
           <button
@@ -87,17 +87,10 @@ export function RuleSelector({
                     }`}>
                     {rule.name}
                   </span>
-                  {rule.isProfitable && (
-                    <span className='text-xs px-1.5 py-0.5 bg-green-500/30 text-green-300 rounded-full'>
-                      ✓ Profitable
-                    </span>
-                  )}
-                  {rule.isNew && (
-                    <span className='text-xs px-1.5 py-0.5 bg-blue-500/30 text-blue-300 rounded-full'>
-                      NEW
-                    </span>
-                  )}
-                  {rule.id === 'momentum_50' && <span className='text-xs'>⭐</span>}
+                  <span className='text-xs px-1.5 py-0.5 bg-green-500/30 text-green-300 rounded-full'>
+                    ✓ Active
+                  </span>
+                  {rule.id === 'momentum_equilibrium' && <span className='text-xs'>⭐</span>}
                 </div>
                 <p className='text-xs text-white/60 mt-0.5'>
                   {rule.description}
