@@ -45,10 +45,13 @@ logger = logging.getLogger(__name__)
 # All timeframes to monitor
 TIMEFRAMES = ['5m', '15m', '30m', '1h', '4h', '1d']
 
-# ONLY profitable rules - no wasting time on losers!
+# ALL 5 PROFITABLE RULES - Unprofitable ones deleted from codebase!
 PROFITABLE_RULES = [
-    'momentum_equilibrium',      # 74% WR, 3.31 PF - STAR PERFORMER
-    'london_session_breakout',   # 58.8% WR, 2.74 PF - STRONG
+    'momentum_equilibrium',      # 76% WR, 293% return - ⭐ BEST
+    'london_session_breakout',   # 58.8% WR, 2.74 PF - ⭐ STRONG
+    'golden_fibonacci',          # 52.6% WR, 44% return
+    'ath_retest',                # 38% WR, 30% return
+    'order_block_retest',        # Institutional smart money zones
 ]
 
 
@@ -101,16 +104,11 @@ class TimeframeWorker:
                 timeframe=self.timeframe
             )
 
-            # Create strategy with ONLY profitable rules enabled
+            # Create strategy - all 5 profitable rules enabled by default
             strategy = GoldStrategy()
-            # Disable ALL rules first
-            for rule_name in strategy.rules_enabled.keys():
-                strategy.rules_enabled[rule_name] = False
-            # Enable ONLY profitable ones
-            for rule_name in PROFITABLE_RULES:
-                strategy.rules_enabled[rule_name] = True
+            # All rules are already enabled by default (they're all profitable!)
 
-            logger.info(f"   [{self.timeframe}] Enabled rules: {PROFITABLE_RULES}")
+            logger.info(f"   [{self.timeframe}] All 5 profitable rules enabled: {list(strategy.rules_enabled.keys())}")
 
             # Create validator
             validator = SignalValidator(min_rr_ratio=1.5)

@@ -16,14 +16,13 @@ from signals.gold_strategy import GoldStrategy, create_strategy_function
 # Timeframes to test
 TIMEFRAMES = ['5m', '15m', '30m', '1h', '4h', '1d']
 
-# All rules to test
+# All 5 profitable rules to test
 ALL_RULES = [
     'momentum_equilibrium',
     'london_session_breakout',
     'golden_fibonacci',
     'order_block_retest',
     'ath_retest',
-    'bollinger_squeeze'
 ]
 
 def run_backtest_for_rule(rule_name: str, timeframe: str, df: pd.DataFrame):
