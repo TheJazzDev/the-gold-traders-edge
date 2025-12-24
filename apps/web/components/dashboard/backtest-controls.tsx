@@ -2,7 +2,6 @@
 
 import { useState } from 'react';
 import { RefreshCw, Play } from 'lucide-react';
-import { TimeframeSelector } from './timeframe-selector';
 import { RuleSelector } from './rule-selector';
 import { ErrorDisplay } from './error-display';
 import { WelcomeState } from './welcome-state';
@@ -22,7 +21,6 @@ import {
 import { ALL_RULES, PROFITABLE_RULES } from '@/lib/constants';
 
 export function BacktestControls() {
-  const [timeframe, setTimeframe] = useState('4h');
   const [selectedRules, setSelectedRules] = useState<string[]>([
     ...PROFITABLE_RULES,
   ]);
@@ -68,7 +66,8 @@ export function BacktestControls() {
 
       const rules = selectedRules.join(',');
 
-      // Run backtest once and get OHLCV data in parallel
+      // Run backtest on 4h timeframe (default) and get OHLCV data in parallel
+      const timeframe = '4h';
       const [backtestResult, ohlcv] = await Promise.all([
         runBacktest(timeframe, rules),
         getOHLCV(timeframe, 500),
@@ -99,10 +98,17 @@ export function BacktestControls() {
           Backtest Configuration
         </h2>
 
-        <div className='grid lg:grid-cols-3 gap-4 sm:gap-6'>
-          {/* Timeframe Selection */}
-          <TimeframeSelector value={timeframe} onChange={setTimeframe} />
+        <div className='mb-4 bg-white/5 rounded-xl p-3 border border-amber-500/30'>
+          <div className='flex items-center gap-2'>
+            <div className='w-2 h-2 bg-green-500 rounded-full animate-pulse'></div>
+            <p className='text-xs sm:text-sm text-white/80'>
+              <span className='font-semibold text-amber-300'>Backtest runs on 4H timeframe</span>
+              {' '}• All 6 timeframes (5m, 15m, 30m, 1h, 4h, 1d) are active in live trading
+            </p>
+          </div>
+        </div>
 
+        <div>
           {/* Rule Selection */}
           <RuleSelector
             selectedRules={selectedRules}
@@ -189,7 +195,7 @@ export function BacktestControls() {
       {/* Info Cards */}
       <InfoCards
         selectedRules={selectedRules}
-        timeframe={timeframe}
+        timeframe={'4h'}
         lastUpdate={lastUpdate}
         error={error}
         rulePerformance={ruleData}

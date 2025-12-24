@@ -9,7 +9,7 @@ sys.path.insert(0, str(Path(__file__).parent / "src"))
 
 import pandas as pd
 from datetime import datetime
-from data.loader import load_gold_data
+from data.loader import GoldDataLoader
 from backtesting.engine import BacktestEngine
 from signals.gold_strategy import GoldStrategy, create_strategy_function
 
@@ -55,6 +55,9 @@ def main():
     print("Testing all rules across all timeframes")
     print("=" * 80)
 
+    # Create data loader
+    loader = GoldDataLoader()
+
     # Store results
     results = []
 
@@ -66,11 +69,28 @@ def main():
         # Load data for this timeframe
         print(f"\n📊 Loading {timeframe} data...")
         try:
-            df = load_gold_data(
+            # Map timeframe to yfinance interval
+            interval_map = {
+                '5m': '5m',
+                '15m': '15m',
+                '30m': '30m',
+                '1h': '1h',
+                '4h': '1h',  # Load 1h and resample
+                '1d': '1d'
+            }
+
+            interval = interval_map.get(timeframe, '1h')
+            df = loader.load_from_yfinance(
                 start_date="2023-01-01",
                 end_date="2025-12-23",
-                timeframe=timeframe
+                interval=interval
             )
+
+            # Resample if needed
+            if timeframe == '4h':
+                df = loader.resample_timeframe(df, '4h')
+
+            df = loader.clean_data(df)
             print(f"   Loaded {len(df)} candles from {df.index[0]} to {df.index[-1]}")
         except Exception as e:
             print(f"   ❌ Error loading {timeframe} data: {e}")

@@ -233,24 +233,38 @@ async def get_trades(
 
 @router.get("/backtest")
 async def get_backtest(
+    timeframe: Optional[str] = None,
+    rules: Optional[str] = None,
     start_date: Optional[str] = None,
     end_date: Optional[str] = None,
     db: Session = Depends(get_db)
 ):
     """
-    Get backtest results and historical performance.
+    Run backtest and return comprehensive results.
+
+    This endpoint combines summary stats, rule performance, and trade details
+    to provide everything needed for the backtest dashboard.
 
     Args:
+        timeframe: Timeframe filter (e.g., '4h', '1d')
+        rules: Comma-separated list of rule IDs to include
         start_date: Start date (YYYY-MM-DD)
         end_date: End date (YYYY-MM-DD)
         db: Database session
 
     Returns:
-        Backtest performance data
+        Combined backtest results with summary, rules, and trades
     """
     query = db.query(Signal)
 
-    # Apply date filters
+    # Apply filters
+    if timeframe:
+        query = query.filter(Signal.timeframe == timeframe)
+
+    if rules:
+        rule_list = [r.strip() for r in rules.split(',')]
+        query = query.filter(Signal.strategy_name.in_(rule_list))
+
     if start_date:
         try:
             start = datetime.fromisoformat(start_date)
@@ -267,37 +281,125 @@ async def get_backtest(
 
     signals = query.order_by(Signal.timestamp).all()
 
-    # Calculate equity curve
-    equity = 10000  # Starting balance
-    equity_curve = [{"date": None, "equity": equity}]
-
+    # Filter closed signals with PnL
     closed_signals = [s for s in signals if s.status in [
         SignalStatus.CLOSED_TP,
         SignalStatus.CLOSED_SL,
         SignalStatus.CLOSED_MANUAL
     ] and s.pnl is not None]
 
-    for signal in closed_signals:
-        equity += signal.pnl
-        equity_curve.append({
-            "date": signal.closed_at.isoformat() if signal.closed_at else signal.timestamp.isoformat(),
-            "equity": round(equity, 2)
-        })
-
-    # Calculate stats
-    total_return = ((equity - 10000) / 10000) * 100
+    # Calculate summary statistics
+    initial_balance = 10000
+    equity = initial_balance
+    equity_curve = []
+    max_equity = initial_balance
+    max_drawdown = 0
 
     wins = [s for s in closed_signals if s.pnl > 0]
     losses = [s for s in closed_signals if s.pnl <= 0]
 
+    for signal in closed_signals:
+        equity += signal.pnl
+        equity_curve.append(equity)
+        max_equity = max(max_equity, equity)
+        drawdown = max_equity - equity
+        max_drawdown = max(max_drawdown, drawdown)
+
+    total_pnl = sum(s.pnl for s in closed_signals)
+    total_return_pct = ((equity - initial_balance) / initial_balance) * 100
+    max_drawdown_pct = (max_drawdown / max_equity * 100) if max_equity > 0 else 0
+
+    win_pnl = sum(s.pnl for s in wins)
+    loss_pnl = abs(sum(s.pnl for s in losses))
+    profit_factor = (win_pnl / loss_pnl) if loss_pnl > 0 else 0
+
+    avg_win = (win_pnl / len(wins)) if wins else 0
+    avg_loss = (-loss_pnl / len(losses)) if losses else 0
+
+    win_rate = (len(wins) / len(closed_signals) * 100) if closed_signals else 0
+
+    # Calculate Sharpe ratio (simplified)
+    if closed_signals:
+        returns = [s.pnl / initial_balance for s in closed_signals]
+        avg_return = sum(returns) / len(returns)
+        std_return = (sum((r - avg_return) ** 2 for r in returns) / len(returns)) ** 0.5
+        sharpe_ratio = (avg_return / std_return * (252 ** 0.5)) if std_return > 0 else 0
+    else:
+        sharpe_ratio = 0
+
+    summary = {
+        "total_signals": len(closed_signals),
+        "winning_signals": len(wins),
+        "losing_signals": len(losses),
+        "total_pnl": round(total_pnl, 2),
+        "total_return_pct": round(total_return_pct, 2),
+        "win_rate": round(win_rate, 2),
+        "avg_win": round(avg_win, 2),
+        "avg_loss": round(avg_loss, 2),
+        "profit_factor": round(profit_factor, 2),
+        "max_drawdown": round(max_drawdown, 2),
+        "max_drawdown_pct": round(max_drawdown_pct, 2),
+        "sharpe_ratio": round(sharpe_ratio, 2),
+        "initial_balance": initial_balance,
+        "final_balance": round(equity, 2)
+    }
+
+    # Group by rule/strategy
+    strategy_stats = {}
+    for signal in closed_signals:
+        strategy_name = signal.strategy_name or "Unknown"
+
+        if strategy_name not in strategy_stats:
+            strategy_stats[strategy_name] = {
+                "name": strategy_name,
+                "signals": [],
+                "total_pnl": 0
+            }
+
+        strategy_stats[strategy_name]["signals"].append(signal)
+        strategy_stats[strategy_name]["total_pnl"] += signal.pnl
+
+    rules_performance = []
+    for strategy_name, data in strategy_stats.items():
+        strategy_signals = data["signals"]
+        strategy_wins = [s for s in strategy_signals if s.pnl > 0]
+        strategy_losses = [s for s in strategy_signals if s.pnl <= 0]
+
+        win_pnl = sum(s.pnl for s in strategy_wins)
+        loss_pnl = abs(sum(s.pnl for s in strategy_losses))
+
+        rules_performance.append({
+            "name": strategy_name,
+            "total_signals": len(strategy_signals),
+            "winning_signals": len(strategy_wins),
+            "losing_signals": len(strategy_losses),
+            "win_rate": round((len(strategy_wins) / len(strategy_signals) * 100), 2) if strategy_signals else 0,
+            "net_pnl": round(data["total_pnl"], 2),
+            "avg_pnl": round(data["total_pnl"] / len(strategy_signals), 2) if strategy_signals else 0,
+            "profit_factor": round((win_pnl / loss_pnl), 2) if loss_pnl > 0 else 0
+        })
+
+    # Build trades list
+    trades = []
+    for signal in closed_signals:
+        trades.append({
+            "id": signal.id,
+            "signal_name": signal.strategy_name or "Unknown",
+            "direction": signal.direction.value,
+            "entry_time": signal.timestamp.isoformat(),
+            "entry_price": signal.entry_price,
+            "stop_loss": signal.stop_loss,
+            "take_profit": signal.take_profit,
+            "exit_time": signal.closed_at.isoformat() if signal.closed_at else None,
+            "exit_price": signal.exit_price,
+            "pnl": round(signal.pnl, 2),
+            "pnl_pct": round(signal.pnl_pct, 2) if signal.pnl_pct else 0,
+            "status": signal.status.value,
+            "risk_reward": round((signal.take_profit - signal.entry_price) / (signal.entry_price - signal.stop_loss), 2) if signal.direction.value == 'long' else round((signal.entry_price - signal.take_profit) / (signal.stop_loss - signal.entry_price), 2) if signal.take_profit else None
+        })
+
     return {
-        "start_date": start_date,
-        "end_date": end_date,
-        "total_trades": len(closed_signals),
-        "wins": len(wins),
-        "losses": len(losses),
-        "win_rate": (len(wins) / len(closed_signals) * 100) if closed_signals else 0,
-        "total_return": round(total_return, 2),
-        "final_equity": round(equity, 2),
-        "equity_curve": equity_curve
+        "summary": summary,
+        "rules": rules_performance,
+        "trades": trades
     }

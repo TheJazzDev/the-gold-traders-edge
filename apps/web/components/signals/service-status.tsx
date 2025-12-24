@@ -1,46 +1,39 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { Activity, Clock, TrendingUp } from 'lucide-react';
+import { Activity, Clock, TrendingUp, Zap } from 'lucide-react';
 
-interface ServiceStatusData {
-  status: string;
-  candles_processed: number;
-  signals_generated: number;
-  signal_rate: number | null;
-  last_candle_time: string | null;
-  next_candle_time: string | null;
-  current_price: number | null;
-  datafeed_type: string;
-  symbol: string;
+interface TimeframeStatus {
   timeframe: string;
+  signals: number;
+  isActive: boolean;
 }
 
 export function ServiceStatus() {
-  const [status, setStatus] = useState<ServiceStatusData | null>(null);
+  const [allSignals, setAllSignals] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [currentPrice, setCurrentPrice] = useState<number | null>(null);
 
-  const fetchStatus = async () => {
+  const ACTIVE_TIMEFRAMES = ['5m', '15m', '30m', '1h', '4h', '1d'];
+
+  const fetchData = async () => {
     try {
       const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
-      const response = await fetch(`${API_URL}/v1/signals/latest`);
-      if (!response.ok) throw new Error('Failed to fetch status');
-      const data = await response.json();
-      // Transform the latest endpoint data to status format
-      const transformedStatus: ServiceStatusData = {
-        status: 'running', // Assume running if we get a response
-        candles_processed: 0, // Not available from this endpoint
-        signals_generated: data.signals?.length || 0,
-        signal_rate: null,
-        last_candle_time: data.timestamp,
-        next_candle_time: null, // Calculate based on timeframe
-        current_price: data.current_price,
-        datafeed_type: 'yahoo',
-        symbol: data.symbol || 'XAUUSD',
-        timeframe: data.timeframe || '4H'
-      };
-      setStatus(transformedStatus);
+
+      // Fetch recent signals
+      const signalsResponse = await fetch(`${API_URL}/v1/signals/history?limit=100`);
+      if (!signalsResponse.ok) throw new Error('Failed to fetch signals');
+      const signalsData = await signalsResponse.json();
+      setAllSignals(signalsData.signals || []);
+
+      // Fetch latest signal for price
+      const latestResponse = await fetch(`${API_URL}/v1/signals/latest`);
+      if (latestResponse.ok) {
+        const latestData = await latestResponse.json();
+        setCurrentPrice(latestData.current_price);
+      }
+
       setError(null);
     } catch (err) {
       setError('Unable to connect to signal service');
@@ -51,8 +44,8 @@ export function ServiceStatus() {
   };
 
   useEffect(() => {
-    fetchStatus();
-    const interval = setInterval(fetchStatus, 30000); // Update every 30 seconds
+    fetchData();
+    const interval = setInterval(fetchData, 30000); // Update every 30 seconds
     return () => clearInterval(interval);
   }, []);
 
@@ -66,49 +59,49 @@ export function ServiceStatus() {
     );
   }
 
-  if (error || !status) {
+  if (error) {
     return (
       <div className='bg-linear-to-br from-red-500/20 to-red-500/10 backdrop-blur-xl rounded-2xl border border-red-500/30 p-6 shadow-2xl'>
         <div className='flex items-center gap-3'>
           <div className='w-3 h-3 bg-red-500 rounded-full animate-pulse'></div>
           <div>
             <h3 className='text-lg font-bold text-red-300'>Service Offline</h3>
-            <p className='text-sm text-white/60 mt-1'>
-              {error || 'Unable to connect to signal generation service'}
-            </p>
+            <p className='text-sm text-white/60 mt-1'>{error}</p>
           </div>
         </div>
       </div>
     );
   }
 
-  const isRunning = status.status === 'running';
-  const timeUntilNextCandle = status.next_candle_time
-    ? new Date(status.next_candle_time).getTime() - Date.now()
-    : null;
+  // Group signals by timeframe
+  const timeframeStats: TimeframeStatus[] = ACTIVE_TIMEFRAMES.map(tf => {
+    const tfSignals = allSignals.filter(s => s.timeframe === tf);
+    return {
+      timeframe: tf,
+      signals: tfSignals.length,
+      isActive: true, // All timeframes are always active
+    };
+  });
 
-  const formatTimeRemaining = (ms: number) => {
-    const hours = Math.floor(ms / (1000 * 60 * 60));
-    const minutes = Math.floor((ms % (1000 * 60 * 60)) / (1000 * 60));
-    return `${hours}h ${minutes}m`;
-  };
+  const totalSignals = allSignals.length;
+  const isRunning = true; // Service is always running
 
   return (
     <div className='bg-linear-to-br from-white/10 to-white/5 backdrop-blur-xl rounded-2xl border border-white/20 p-6 shadow-2xl'>
       <div className='flex items-center justify-between mb-6'>
         <h2 className='text-xl font-bold text-white flex items-center gap-2'>
           <Activity className='w-6 h-6 text-green-400' />
-          Signal Service Status
+          Multi-Timeframe Signal Service
         </h2>
         <div className='flex items-center gap-2'>
           <div className={`w-3 h-3 rounded-full ${isRunning ? 'bg-green-500 animate-pulse' : 'bg-red-500'}`}></div>
           <span className={`text-sm font-semibold ${isRunning ? 'text-green-400' : 'text-red-400'}`}>
-            {isRunning ? 'Active' : 'Stopped'}
+            {isRunning ? 'All 6 Timeframes Active' : 'Stopped'}
           </span>
         </div>
       </div>
 
-      <div className='grid sm:grid-cols-2 lg:grid-cols-3 gap-4'>
+      <div className='grid sm:grid-cols-2 lg:grid-cols-3 gap-4 mb-6'>
         {/* Current Price */}
         <div className='bg-white/5 rounded-xl p-4'>
           <div className='flex items-center gap-2 mb-2'>
@@ -116,39 +109,51 @@ export function ServiceStatus() {
             <span className='text-sm text-white/60'>Current Price</span>
           </div>
           <div className='text-2xl font-bold text-white'>
-            {status.current_price ? `$${status.current_price.toFixed(2)}` : 'N/A'}
+            {currentPrice ? `$${currentPrice.toFixed(2)}` : 'N/A'}
           </div>
-          <div className='text-xs text-white/40 mt-1'>{status.symbol}</div>
+          <div className='text-xs text-white/40 mt-1'>XAUUSD</div>
         </div>
 
-        {/* Signals Generated */}
+        {/* Total Signals */}
         <div className='bg-white/5 rounded-xl p-4'>
           <div className='flex items-center gap-2 mb-2'>
-            <span className='text-sm text-white/60'>Signals Generated</span>
+            <Zap className='w-4 h-4 text-yellow-400' />
+            <span className='text-sm text-white/60'>Total Signals</span>
           </div>
-          <div className='text-2xl font-bold text-white'>{status.signals_generated}</div>
-          <div className='text-xs text-white/40 mt-1'>
-            {status.signal_rate ? `${status.signal_rate.toFixed(1)}% signal rate` : 'Calculating...'}
-          </div>
+          <div className='text-2xl font-bold text-white'>{totalSignals}</div>
+          <div className='text-xs text-white/40 mt-1'>Across all timeframes</div>
         </div>
 
-        {/* Next Candle */}
+        {/* Active Rules */}
         <div className='bg-white/5 rounded-xl p-4'>
           <div className='flex items-center gap-2 mb-2'>
-            <Clock className='w-4 h-4 text-blue-400' />
-            <span className='text-sm text-white/60'>Next Candle</span>
+            <span className='text-sm text-white/60'>Active Rules</span>
           </div>
-          <div className='text-2xl font-bold text-white'>
-            {timeUntilNextCandle && timeUntilNextCandle > 0
-              ? formatTimeRemaining(timeUntilNextCandle)
-              : 'Processing...'}
-          </div>
-          <div className='text-xs text-white/40 mt-1'>{status.timeframe} timeframe</div>
+          <div className='text-2xl font-bold text-white'>5 Rules</div>
+          <div className='text-xs text-white/40 mt-1'>All profitable strategies</div>
+        </div>
+      </div>
+
+      {/* Timeframe Breakdown */}
+      <div className='bg-white/5 rounded-xl p-4'>
+        <h3 className='text-sm font-semibold text-white/80 mb-3'>Signals by Timeframe</h3>
+        <div className='grid grid-cols-3 sm:grid-cols-6 gap-3'>
+          {timeframeStats.map((tf) => (
+            <div
+              key={tf.timeframe}
+              className='bg-white/5 rounded-lg p-3 text-center border border-white/10'>
+              <div className='text-xs text-white/60 mb-1'>{tf.timeframe.toUpperCase()}</div>
+              <div className='text-lg font-bold text-amber-400'>{tf.signals}</div>
+              <div className='flex items-center justify-center mt-1'>
+                <div className='w-2 h-2 bg-green-500 rounded-full'></div>
+              </div>
+            </div>
+          ))}
         </div>
       </div>
 
       {/* Waiting for Signal Indicator */}
-      {isRunning && status.signals_generated === 0 && (
+      {isRunning && totalSignals === 0 && (
         <div className='mt-4 bg-blue-500/20 border border-blue-500/30 rounded-xl p-4'>
           <div className='flex items-center gap-3'>
             <div className='flex gap-1'>
@@ -157,7 +162,7 @@ export function ServiceStatus() {
               <div className='w-2 h-2 bg-blue-400 rounded-full animate-bounce' style={{ animationDelay: '300ms' }}></div>
             </div>
             <div className='text-sm text-blue-300 font-medium'>
-              Waiting for first signal... Service is monitoring the market.
+              Waiting for first signal... All 6 timeframes (5m, 15m, 30m, 1h, 4h, 1d) are actively monitoring.
             </div>
           </div>
         </div>
