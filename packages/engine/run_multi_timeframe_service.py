@@ -209,9 +209,12 @@ class MultiTimeframeService:
     def _monitor_loop(self):
         """
         Monitor all workers and display status periodically.
+        Also sends keep-alive pings to prevent Railway from sleeping.
         """
         last_status_time = datetime.now()
+        last_keepalive_time = datetime.now()
         status_interval = 300  # 5 minutes
+        keepalive_interval = 240  # 4 minutes (ping API to keep it awake)
 
         while self.is_running:
             time.sleep(10)  # Check every 10 seconds
@@ -222,10 +225,33 @@ class MultiTimeframeService:
                     logger.warning(f"⚠️  Worker {timeframe} has stopped, restarting...")
                     # Could implement auto-restart here if needed
 
+            # Send keep-alive ping to prevent Railway sleep
+            if (datetime.now() - last_keepalive_time).total_seconds() >= keepalive_interval:
+                self._send_keepalive()
+                last_keepalive_time = datetime.now()
+
             # Display status periodically
             if (datetime.now() - last_status_time).total_seconds() >= status_interval:
                 self._display_status()
                 last_status_time = datetime.now()
+
+    def _send_keepalive(self):
+        """
+        Send a keep-alive ping to the API health endpoint.
+        This prevents Railway from putting the service to sleep.
+        """
+        try:
+            import requests
+            # Ping the health endpoint (running in the same container via supervisor)
+            port = os.getenv('PORT', '8000')
+            url = f"http://localhost:{port}/health"
+            response = requests.get(url, timeout=5)
+            if response.status_code == 200:
+                logger.debug("✓ Keep-alive ping successful")
+            else:
+                logger.warning(f"⚠️  Keep-alive ping returned {response.status_code}")
+        except Exception as e:
+            logger.debug(f"Keep-alive ping failed (expected during startup): {e}")
 
     def _display_status(self):
         """Display service status."""
