@@ -123,7 +123,7 @@ class TimeframeWorker:
             # Add subscribers
             # Database subscriber - saves to DB
             db_subscriber = DatabaseSubscriber(database_url=self.database_url)
-            self.generator.add_subscriber(db_subscriber.on_signal)
+            self.generator.add_subscriber(db_subscriber)  # DatabaseSubscriber is callable via __call__
 
             # Logger subscriber - logs to file
             logger_subscriber = LoggerSubscriber()
