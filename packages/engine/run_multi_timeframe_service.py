@@ -108,9 +108,12 @@ class TimeframeWorker:
         try:
             logger.info(f"🚀 Initializing {self.timeframe} generator...")
 
-            # Create data feed
+            # Create data feed (use setting or environment variable)
+            datafeed_type = os.getenv('DATA_FEED_TYPE', 'yahoo')  # Default to yahoo for backward compatibility
+            logger.info(f"   [{self.timeframe}] Using data feed: {datafeed_type}")
+
             data_feed = create_datafeed(
-                datafeed_type='yahoo',
+                datafeed_type=datafeed_type,
                 symbol='XAUUSD',
                 timeframe=self.timeframe
             )
