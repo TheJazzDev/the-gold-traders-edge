@@ -241,17 +241,19 @@ class MultiTimeframeService:
         self.start_time: datetime = None
 
         # Create SHARED deduplication subscriber (ONE instance for ALL timeframes)
+        # DATABASE-BACKED: Loads recent signals from DB on startup to prevent duplicates after restart
         db_subscriber = DatabaseSubscriber(database_url=self.database_url)
         telegram_subscriber = TelegramSubscriber()
 
         self.shared_dedup_subscriber = DeduplicationSubscriber(
             subscribers=[db_subscriber, telegram_subscriber],
-            dedup_window_hours=4
+            dedup_window_hours=4,
+            database_url=self.database_url  # Pass database URL for persistence
         )
 
         logger.info(
             "✅ Shared deduplication subscriber created "
-            "(prevents duplicate signals across all timeframes)"
+            "(prevents duplicate signals across all timeframes and restarts)"
         )
 
     def start(self):

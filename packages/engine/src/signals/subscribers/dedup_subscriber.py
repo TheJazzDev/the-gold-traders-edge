@@ -29,16 +29,17 @@ class DeduplicationSubscriber:
         generator.add_subscriber(dedup)
     """
 
-    def __init__(self, subscribers: List[Callable], dedup_window_hours: int = 4):
+    def __init__(self, subscribers: List[Callable], dedup_window_hours: int = 4, database_url: str = None):
         """
         Initialize deduplication subscriber.
 
         Args:
             subscribers: List of subscriber callables to wrap
             dedup_window_hours: Deduplication time window in hours
+            database_url: Database URL for persistence (default: from DATABASE_URL env)
         """
         self.subscribers = subscribers
-        self.deduplicator = get_deduplicator(dedup_window_hours)
+        self.deduplicator = get_deduplicator(dedup_window_hours, database_url)
 
         logger.info(
             f"✅ DeduplicationSubscriber initialized with {len(subscribers)} subscriber(s), "

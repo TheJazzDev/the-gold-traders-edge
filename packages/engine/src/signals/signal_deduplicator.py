@@ -5,6 +5,10 @@ Prevents duplicate signals from being sent across multiple timeframes.
 
 When the same setup appears on multiple timeframes (e.g., an order block on 1H, 4H, and 1D),
 only the first signal is sent. Subsequent duplicate signals within a time window are suppressed.
+
+IMPORTANT: This deduplicator is DATABASE-BACKED to persist across deployments.
+On startup, it loads recent signals from the database to prevent duplicate notifications
+when the service restarts.
 """
 
 import logging
@@ -12,6 +16,7 @@ from datetime import datetime, timedelta
 from typing import Dict, List, Optional
 from dataclasses import dataclass
 import hashlib
+import os
 
 logger = logging.getLogger(__name__)
 
@@ -64,19 +69,27 @@ class SignalDeduplicator:
         - 1D timeframe detects same Order Block LONG @ 2650.50
 
         Only the FIRST signal is sent. The other two are suppressed.
+
+    DATABASE-BACKED: On startup, loads recent signals from database to prevent
+    duplicate notifications when the service restarts (Railway deployments).
     """
 
-    def __init__(self, dedup_window_hours: int = 4):
+    def __init__(self, dedup_window_hours: int = 4, database_url: Optional[str] = None):
         """
         Initialize deduplicator.
 
         Args:
             dedup_window_hours: Time window for duplicate detection (default: 4 hours)
+            database_url: Database URL for persistence (default: from DATABASE_URL env)
         """
         self.dedup_window_hours = dedup_window_hours
         self.recent_signals: Dict[str, SignalFingerprint] = {}
+        self.database_url = database_url or os.getenv('DATABASE_URL')
 
-        logger.info(f"✅ SignalDeduplicator initialized (window: {dedup_window_hours}h)")
+        # Load recent signals from database on startup
+        self._load_recent_signals_from_db()
+
+        logger.info(f"✅ SignalDeduplicator initialized (window: {dedup_window_hours}h, db-backed: {self.database_url is not None})")
 
     def is_duplicate(self, validated_signal) -> bool:
         """
@@ -136,6 +149,72 @@ class SignalDeduplicator:
         if removed > 0:
             logger.debug(f"🧹 Cleaned up {removed} old signal(s)")
 
+    def _load_recent_signals_from_db(self):
+        """
+        Load recent signals from database on startup.
+
+        This prevents duplicate notifications when the service restarts (e.g., Railway deployments).
+        Without this, the in-memory deduplicator would be empty on startup and all signals
+        would appear "unique", causing duplicate Telegram notifications.
+        """
+        if not self.database_url:
+            logger.warning("⚠️  No database URL provided - deduplicator will NOT persist across restarts!")
+            logger.warning("   Set DATABASE_URL environment variable to enable database-backed deduplication")
+            return
+
+        try:
+            from database.connection import DatabaseManager
+            from database.models import Signal
+            from datetime import timezone
+
+            # Create database manager
+            db_manager = DatabaseManager(self.database_url)
+
+            # Calculate cutoff time (only load signals within dedup window)
+            cutoff = datetime.now(timezone.utc) - timedelta(hours=self.dedup_window_hours)
+
+            # Load recent signals from database
+            with db_manager.get_session() as session:
+                recent_db_signals = (
+                    session.query(Signal)
+                    .filter(Signal.timestamp >= cutoff)
+                    .order_by(Signal.timestamp.desc())
+                    .all()
+                )
+
+                # Convert to fingerprints and add to in-memory cache
+                loaded_count = 0
+                for db_signal in recent_db_signals:
+                    # Create fingerprint from database signal
+                    fingerprint = SignalFingerprint(
+                        direction=db_signal.direction.value if hasattr(db_signal.direction, 'value') else db_signal.direction,
+                        strategy_name=db_signal.strategy_name,
+                        entry_price=float(db_signal.entry_price),
+                        stop_loss=float(db_signal.stop_loss),
+                        take_profit=float(db_signal.take_profit),
+                        timestamp=db_signal.timestamp
+                    )
+
+                    # Add to in-memory cache
+                    signal_hash = fingerprint.to_hash()
+                    self.recent_signals[signal_hash] = fingerprint
+                    loaded_count += 1
+
+                if loaded_count > 0:
+                    logger.info(
+                        f"✅ Loaded {loaded_count} recent signal(s) from database "
+                        f"(prevents duplicate notifications on restart)"
+                    )
+                else:
+                    logger.info("✅ No recent signals in database (clean startup)")
+
+        except ImportError as e:
+            logger.warning(f"⚠️  Database modules not available: {e}")
+            logger.warning("   Deduplicator will work but won't persist across restarts")
+        except Exception as e:
+            logger.error(f"❌ Failed to load recent signals from database: {e}", exc_info=True)
+            logger.warning("   Deduplicator will work but may send duplicate notifications on restart")
+
     def get_stats(self) -> Dict:
         """Get deduplicator statistics."""
         return {
@@ -156,12 +235,13 @@ class SignalDeduplicator:
 _deduplicator_instance = None
 
 
-def get_deduplicator(dedup_window_hours: int = 4) -> SignalDeduplicator:
+def get_deduplicator(dedup_window_hours: int = 4, database_url: Optional[str] = None) -> SignalDeduplicator:
     """
     Get the global deduplicator instance (singleton pattern).
 
     Args:
         dedup_window_hours: Deduplication window in hours
+        database_url: Database URL for persistence (default: from DATABASE_URL env)
 
     Returns:
         SignalDeduplicator instance
@@ -169,7 +249,7 @@ def get_deduplicator(dedup_window_hours: int = 4) -> SignalDeduplicator:
     global _deduplicator_instance
 
     if _deduplicator_instance is None:
-        _deduplicator_instance = SignalDeduplicator(dedup_window_hours)
+        _deduplicator_instance = SignalDeduplicator(dedup_window_hours, database_url)
 
     return _deduplicator_instance
 

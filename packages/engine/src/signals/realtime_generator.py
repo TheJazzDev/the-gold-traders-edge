@@ -183,13 +183,21 @@ class SignalValidator:
             )
             return None
 
-        # Check if signal is recent (within last hour) before checking for duplicates
-        # This prevents historical candles from polluting the duplicate detection
+        # Check if signal is recent (within last hour)
+        # REJECT old/historical signals to prevent startup signal replay
         signal_age_hours = (pd.Timestamp.now(tz='UTC') - pd.Timestamp(signal.time)).total_seconds() / 3600
-        is_recent_signal = signal_age_hours < 1.0  # Signal from last hour
+        is_recent_signal = signal_age_hours < 1.0  # Signal must be from last hour
 
-        # Only check for duplicates if this is a recent signal
-        if is_recent_signal and self._is_duplicate(direction_str, signal.time):
+        # REJECT old signals (prevents historical candles from triggering notifications on startup)
+        if not is_recent_signal:
+            logger.debug(
+                f"Skipping old signal: {direction_str} @ ${signal.entry_price:.2f} "
+                f"(age: {signal_age_hours:.1f}h, max: 1h)"
+            )
+            return None
+
+        # Check for duplicates (only for recent signals)
+        if self._is_duplicate(direction_str, signal.time):
             logger.info(
                 f"Duplicate signal detected ({direction_str} within "
                 f"{self.duplicate_window_hours}h). Skipping."
@@ -214,16 +222,15 @@ class SignalValidator:
             current_price=current_price
         )
 
-        # Only add to recent signals if this is a recent signal (prevents historical signals from polluting list)
-        if is_recent_signal:
-            self.recent_signals.append(validated)
+        # Add to recent signals list
+        self.recent_signals.append(validated)
 
-            # Keep only recent signals (last 24 hours)
-            cutoff = pd.Timestamp.now(tz=validated.timestamp.tz) - pd.Timedelta(hours=24)
-            self.recent_signals = [
-                s for s in self.recent_signals
-                if s.timestamp > cutoff
-            ]
+        # Keep only recent signals (last 24 hours)
+        cutoff = pd.Timestamp.now(tz=validated.timestamp.tz) - pd.Timedelta(hours=24)
+        self.recent_signals = [
+            s for s in self.recent_signals
+            if s.timestamp > cutoff
+        ]
 
         logger.info(f"✅ Signal validated: {direction_str} @ ${signal.entry_price:.2f} (age: {signal_age_hours:.1f}h)")
 
