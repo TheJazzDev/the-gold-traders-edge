@@ -29,6 +29,11 @@ from data.realtime_feed import create_datafeed
 from signals.gold_strategy import GoldStrategy
 from signals.realtime_generator import RealtimeSignalGenerator, SignalValidator
 from signals.subscribers import DatabaseSubscriber, LoggerSubscriber, ConsoleSubscriber
+from signals.subscribers.mt5_subscriber import MT5Subscriber
+from trading.mt5_config import MT5Config
+from trading.mt5_connection import create_mt5_connection
+from trading.risk_manager import RiskManager
+from database.connection import DatabaseManager
 
 # Configure logging
 logging.basicConfig(
@@ -60,19 +65,25 @@ class TimeframeWorker:
     Worker thread that runs signal generation for a single timeframe.
     """
 
-    def __init__(self, timeframe: str, database_url: str):
+    def __init__(self, timeframe: str, database_url: str, enable_trading: bool = False, mt5_config: MT5Config = None):
         """
         Initialize timeframe worker.
 
         Args:
             timeframe: Timeframe to monitor (e.g., '5m', '1h', '4h')
             database_url: Database connection URL
+            enable_trading: Whether to enable auto-trading via MT5Subscriber
+            mt5_config: MT5 configuration (required if enable_trading=True)
         """
         self.timeframe = timeframe
         self.database_url = database_url
+        self.enable_trading = enable_trading
+        self.mt5_config = mt5_config
         self.is_running = False
         self.thread: threading.Thread = None
         self.generator: RealtimeSignalGenerator = None
+        self.mt5_connection = None
+        self.risk_manager = None
 
     def start(self):
         """Start the worker thread."""
@@ -133,6 +144,43 @@ class TimeframeWorker:
             console_subscriber = ConsoleSubscriber()
             self.generator.add_subscriber(console_subscriber)  # Callable via __call__
 
+            # MT5 subscriber - auto-trade signals (if enabled)
+            if self.enable_trading and self.mt5_config:
+                logger.info(f"   [{self.timeframe}] Enabling auto-trading via MT5Subscriber...")
+
+                # Create MT5 connection (shared across all timeframes via singleton)
+                self.mt5_connection = create_mt5_connection(self.mt5_config)
+                if not self.mt5_connection.connect():
+                    raise RuntimeError(f"[{self.timeframe}] Failed to connect to MT5")
+
+                # Get account info
+                account_info = self.mt5_connection.get_account_info()
+                logger.info(
+                    f"   [{self.timeframe}] Connected to MT5:\n"
+                    f"      Account: {account_info.get('login', 'N/A')}\n"
+                    f"      Balance: ${account_info.get('balance', 0):.2f}"
+                )
+
+                # Create risk manager
+                self.risk_manager = RiskManager(self.mt5_config)
+                self.risk_manager.set_initial_balance(account_info.get('balance', 0))
+
+                # Create database manager for MT5 subscriber
+                db_manager = DatabaseManager(self.database_url)
+
+                # Add MT5 subscriber
+                mt5_subscriber = MT5Subscriber(
+                    connection=self.mt5_connection,
+                    config=self.mt5_config,
+                    db_manager=db_manager,
+                    risk_manager=self.risk_manager,
+                    dry_run=False  # Set to True for testing without executing trades
+                )
+                self.generator.add_subscriber(mt5_subscriber)
+                logger.info(f"   [{self.timeframe}] ✅ Auto-trading ENABLED")
+            else:
+                logger.info(f"   [{self.timeframe}] Auto-trading DISABLED (signals only)")
+
             logger.info(f"   [{self.timeframe}] Generator ready, starting loop...")
 
             # Run generator
@@ -148,19 +196,34 @@ class MultiTimeframeService:
     Main service that manages multiple timeframe workers.
     """
 
-    def __init__(self, timeframes: List[str] = None, database_url: str = None):
+    def __init__(self, timeframes: List[str] = None, database_url: str = None, enable_trading: bool = False):
         """
         Initialize multi-timeframe service.
 
         Args:
             timeframes: List of timeframes to monitor (default: all)
             database_url: Database URL (default: from env or PostgreSQL)
+            enable_trading: Whether to enable auto-trading (default: False, signals only)
         """
         self.timeframes = timeframes or TIMEFRAMES
         self.database_url = database_url or os.getenv(
             'DATABASE_URL',
             'postgresql://postgres:postgres@localhost:5432/gold_signals'
         )
+        self.enable_trading = enable_trading
+        self.mt5_config = None
+
+        # Load MT5 config if trading is enabled
+        if self.enable_trading:
+            try:
+                self.mt5_config = MT5Config.from_env()
+                self.mt5_config.validate()
+                logger.info("✅ MT5 configuration loaded successfully")
+            except Exception as e:
+                logger.error(f"❌ Failed to load MT5 config: {e}")
+                logger.error("Auto-trading will be DISABLED. Set METAAPI_TOKEN and METAAPI_ACCOUNT_ID in env.")
+                self.enable_trading = False
+
         self.workers: Dict[str, TimeframeWorker] = {}
         self.is_running = False
         self.start_time: datetime = None
@@ -175,6 +238,9 @@ class MultiTimeframeService:
         for rule in PROFITABLE_RULES:
             print(f"   ✅ {rule}")
         print(f"\n💾 Database: {self.database_url}")
+        print(f"🤖 Auto-Trading: {'✅ ENABLED' if self.enable_trading else '❌ DISABLED (signals only)'}")
+        if self.enable_trading and self.mt5_config:
+            print(f"📊 MT5 Connection: {self.mt5_config.connection_type.value}")
         print("\n" + "=" * 80 + "\n")
 
         self.is_running = True
@@ -182,7 +248,12 @@ class MultiTimeframeService:
 
         # Create and start workers for each timeframe
         for timeframe in self.timeframes:
-            worker = TimeframeWorker(timeframe, self.database_url)
+            worker = TimeframeWorker(
+                timeframe=timeframe,
+                database_url=self.database_url,
+                enable_trading=self.enable_trading,
+                mt5_config=self.mt5_config
+            )
             self.workers[timeframe] = worker
             worker.start()
             time.sleep(2)  # Stagger starts to avoid overwhelming the API
@@ -295,12 +366,27 @@ def main():
         help='Database URL (default: from DATABASE_URL env)'
     )
 
+    parser.add_argument(
+        '--enable-trading',
+        action='store_true',
+        help='Enable auto-trading via MT5 (requires METAAPI_TOKEN and METAAPI_ACCOUNT_ID env vars)'
+    )
+
     args = parser.parse_args()
+
+    # Check if trading should be enabled (CLI flag or environment variable)
+    enable_trading = args.enable_trading or os.getenv('ENABLE_AUTO_TRADING', '').lower() in ['true', '1', 'yes']
+
+    if enable_trading:
+        logger.info("🤖 Auto-trading ENABLED - signals will be executed on MT5 account")
+    else:
+        logger.info("📊 Signals-only mode - trades will NOT be executed (set --enable-trading or ENABLE_AUTO_TRADING=true to enable)")
 
     # Create and start service
     service = MultiTimeframeService(
         timeframes=args.timeframes,
-        database_url=args.database
+        database_url=args.database,
+        enable_trading=enable_trading
     )
 
     try:
