@@ -77,7 +77,14 @@ class DatabaseSubscriber:
             else SignalDirection.SHORT
         )
 
-        # Create Signal model instance
+        # Helper function to convert NumPy types to Python types
+        def to_python_float(value):
+            """Convert NumPy float64/float32 to Python float."""
+            if hasattr(value, 'item'):  # NumPy scalar
+                return float(value.item())
+            return float(value)
+
+        # Create Signal model instance (convert all NumPy types to Python types)
         signal = Signal(
             # Metadata
             timestamp=validated_signal.timestamp,
@@ -85,17 +92,17 @@ class DatabaseSubscriber:
             timeframe=validated_signal.timeframe,
             strategy_name=validated_signal.strategy_name,
 
-            # Signal details
+            # Signal details (convert NumPy floats to Python floats)
             direction=direction,
-            entry_price=validated_signal.entry_price,
-            stop_loss=validated_signal.stop_loss,
-            take_profit=validated_signal.take_profit,
-            confidence=validated_signal.confidence,
+            entry_price=to_python_float(validated_signal.entry_price),
+            stop_loss=to_python_float(validated_signal.stop_loss),
+            take_profit=to_python_float(validated_signal.take_profit),
+            confidence=to_python_float(validated_signal.confidence),
 
-            # Risk metrics
-            risk_pips=validated_signal.risk_pips,
-            reward_pips=validated_signal.reward_pips,
-            risk_reward_ratio=validated_signal.risk_reward_ratio,
+            # Risk metrics (convert NumPy floats to Python floats)
+            risk_pips=to_python_float(validated_signal.risk_pips),
+            reward_pips=to_python_float(validated_signal.reward_pips),
+            risk_reward_ratio=to_python_float(validated_signal.risk_reward_ratio),
 
             # Status (pending until executed)
             status=SignalStatus.PENDING,
