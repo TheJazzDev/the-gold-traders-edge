@@ -30,6 +30,9 @@ from signals.gold_strategy import GoldStrategy
 from signals.realtime_generator import RealtimeSignalGenerator, SignalValidator
 from signals.subscribers import DatabaseSubscriber, LoggerSubscriber, ConsoleSubscriber
 from signals.subscribers.mt5_subscriber import MT5Subscriber
+from signals.subscribers.telegram_subscriber import TelegramSubscriber
+from signals.subscribers.dedup_subscriber import DeduplicationSubscriber
+from signals.signal_deduplicator import get_deduplicator
 from trading.mt5_config import MT5Config
 from trading.mt5_connection import create_mt5_connection
 from trading.risk_manager import RiskManager
@@ -134,18 +137,25 @@ class TimeframeWorker:
                 validator=validator
             )
 
-            # Add subscribers
-            # Database subscriber - saves to DB
+            # Add subscribers with deduplication
+            # Create subscribers that should have deduplication (Telegram, Database)
             db_subscriber = DatabaseSubscriber(database_url=self.database_url)
-            self.generator.add_subscriber(db_subscriber)  # Callable via __call__
+            telegram_subscriber = TelegramSubscriber()
 
-            # Logger subscriber - logs to file
+            # Wrap them in deduplication subscriber
+            # This ensures same signal from multiple timeframes is only sent once
+            dedup_subscriber = DeduplicationSubscriber(
+                subscribers=[db_subscriber, telegram_subscriber],
+                dedup_window_hours=4
+            )
+            self.generator.add_subscriber(dedup_subscriber)
+
+            # Add non-deduplicated subscribers (these show ALL signals for debugging)
             logger_subscriber = LoggerSubscriber()
-            self.generator.add_subscriber(logger_subscriber)  # Callable via __call__
+            self.generator.add_subscriber(logger_subscriber)
 
-            # Console subscriber - prints to console
             console_subscriber = ConsoleSubscriber()
-            self.generator.add_subscriber(console_subscriber)  # Callable via __call__
+            self.generator.add_subscriber(console_subscriber)
 
             # MT5 subscriber - auto-trade signals (if enabled)
             if self.enable_trading and self.mt5_config:
