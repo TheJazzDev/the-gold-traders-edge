@@ -4,6 +4,7 @@ Gold Signal API - Real-Time Signal Integration
 Connects to the engine's signal database and provides REST API for web dashboard.
 """
 
+import os
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
@@ -20,10 +21,25 @@ app = FastAPI(
     version="1.0.0",
 )
 
+# CORS configuration - allow production and local domains
+allowed_origins = [
+    "http://localhost:3000",
+    "http://localhost:5173",
+    "http://localhost:8000",
+    "https://the-gold-traders-edge.jazzdev.xyz",  # Production frontend
+    "https://the-gold-traders-edge-production.up.railway.app",  # Railway API
+]
+
+# Add custom origins from environment variable
+cors_origins_env = os.getenv("CORS_ORIGINS", "")
+if cors_origins_env:
+    additional_origins = [origin.strip() for origin in cors_origins_env.split(",")]
+    allowed_origins.extend(additional_origins)
+
 # CORS middleware
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Configure properly in production
+    allow_origins=allowed_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
