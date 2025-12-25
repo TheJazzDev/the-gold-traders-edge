@@ -68,18 +68,27 @@ class TimeframeWorker:
     Worker thread that runs signal generation for a single timeframe.
     """
 
-    def __init__(self, timeframe: str, database_url: str, enable_trading: bool = False, mt5_config: MT5Config = None):
+    def __init__(
+        self,
+        timeframe: str,
+        database_url: str,
+        shared_dedup_subscriber,  # SHARED across all workers
+        enable_trading: bool = False,
+        mt5_config: MT5Config = None
+    ):
         """
         Initialize timeframe worker.
 
         Args:
             timeframe: Timeframe to monitor (e.g., '5m', '1h', '4h')
             database_url: Database connection URL
+            shared_dedup_subscriber: Shared deduplication subscriber (same instance for all workers)
             enable_trading: Whether to enable auto-trading via MT5Subscriber
             mt5_config: MT5 configuration (required if enable_trading=True)
         """
         self.timeframe = timeframe
         self.database_url = database_url
+        self.shared_dedup_subscriber = shared_dedup_subscriber
         self.enable_trading = enable_trading
         self.mt5_config = mt5_config
         self.is_running = False
@@ -137,18 +146,8 @@ class TimeframeWorker:
                 validator=validator
             )
 
-            # Add subscribers with deduplication
-            # Create subscribers that should have deduplication (Telegram, Database)
-            db_subscriber = DatabaseSubscriber(database_url=self.database_url)
-            telegram_subscriber = TelegramSubscriber()
-
-            # Wrap them in deduplication subscriber
-            # This ensures same signal from multiple timeframes is only sent once
-            dedup_subscriber = DeduplicationSubscriber(
-                subscribers=[db_subscriber, telegram_subscriber],
-                dedup_window_hours=4
-            )
-            self.generator.add_subscriber(dedup_subscriber)
+            # Add SHARED deduplication subscriber (same instance across ALL workers)
+            self.generator.add_subscriber(self.shared_dedup_subscriber)
 
             # Add non-deduplicated subscribers (these show ALL signals for debugging)
             logger_subscriber = LoggerSubscriber()
@@ -241,6 +240,20 @@ class MultiTimeframeService:
         self.is_running = False
         self.start_time: datetime = None
 
+        # Create SHARED deduplication subscriber (ONE instance for ALL timeframes)
+        db_subscriber = DatabaseSubscriber(database_url=self.database_url)
+        telegram_subscriber = TelegramSubscriber()
+
+        self.shared_dedup_subscriber = DeduplicationSubscriber(
+            subscribers=[db_subscriber, telegram_subscriber],
+            dedup_window_hours=4
+        )
+
+        logger.info(
+            "✅ Shared deduplication subscriber created "
+            "(prevents duplicate signals across all timeframes)"
+        )
+
     def start(self):
         """Start all timeframe workers."""
         print("\n" + "=" * 80)
@@ -264,6 +277,7 @@ class MultiTimeframeService:
             worker = TimeframeWorker(
                 timeframe=timeframe,
                 database_url=self.database_url,
+                shared_dedup_subscriber=self.shared_dedup_subscriber,  # SHARE the same instance
                 enable_trading=self.enable_trading,
                 mt5_config=self.mt5_config
             )
