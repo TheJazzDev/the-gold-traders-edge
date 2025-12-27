@@ -21,28 +21,16 @@ app = FastAPI(
     version="1.0.0",
 )
 
-# CORS configuration - allow production and local domains
-allowed_origins = [
-    "http://localhost:3000",
-    "http://localhost:5173",
-    "http://localhost:8000",
-    "https://the-gold-traders-edge.jazzdev.xyz",  # Production frontend
-    "https://the-gold-traders-edge-production.up.railway.app",  # Railway API
-]
-
-# Add custom origins from environment variable
-cors_origins_env = os.getenv("CORS_ORIGINS", "")
-if cors_origins_env:
-    additional_origins = [origin.strip() for origin in cors_origins_env.split(",")]
-    allowed_origins.extend(additional_origins)
-
-# CORS middleware
+# CORS configuration - allow all origins for now (restrict later with auth)
+# This prevents CORS errors during development and deployment
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=allowed_origins,
-    allow_credentials=True,
-    allow_methods=["*"],
+    allow_origins=["*"],  # Allow all origins
+    allow_credentials=False,  # Set to False when using allow_origins=["*"]
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"],
     allow_headers=["*"],
+    expose_headers=["*"],
+    max_age=3600,  # Cache preflight requests for 1 hour
 )
 
 # Mount static files
