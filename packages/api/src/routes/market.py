@@ -3,6 +3,7 @@
 from datetime import datetime, timedelta
 from typing import Optional
 from fastapi import APIRouter, HTTPException, Query
+from zoneinfo import ZoneInfo
 
 router = APIRouter(prefix="/v1/market", tags=["market"])
 
@@ -140,4 +141,112 @@ async def get_latest_price(
         raise HTTPException(
             status_code=500,
             detail=f"Failed to fetch price: {str(e)}"
+        )
+
+
+@router.get("/status")
+async def get_market_status():
+    """
+    Get market status (open/closed) for Forex markets.
+
+    Forex markets (including XAUUSD) are open:
+    - 24 hours a day, 5 days a week
+    - Sunday 5:00 PM EST to Friday 5:00 PM EST
+    - Closed on weekends (Friday 5pm EST - Sunday 5pm EST)
+
+    Returns:
+        Market status with open/closed info and next market event
+    """
+    try:
+        # Get current time in EST/EDT (New York time zone)
+        ny_tz = ZoneInfo("America/New_York")
+        now = datetime.now(ny_tz)
+
+        # Get current day of week (0=Monday, 6=Sunday)
+        weekday = now.weekday()
+        current_hour = now.hour
+        current_minute = now.minute
+
+        # Market is CLOSED on:
+        # - Friday after 5:00 PM EST
+        # - All day Saturday
+        # - Sunday before 5:00 PM EST
+
+        is_open = True
+        reason = None
+        next_open = None
+        next_close = None
+
+        # Friday after 5pm
+        if weekday == 4 and (current_hour >= 17):  # Friday = 4
+            is_open = False
+            reason = "Weekend - Market closed"
+            # Calculate next Sunday 5pm
+            days_until_sunday = (6 - weekday) % 7
+            next_open_dt = now.replace(hour=17, minute=0, second=0, microsecond=0) + timedelta(days=days_until_sunday + 2)
+            next_open = next_open_dt.isoformat()
+
+        # Saturday (all day)
+        elif weekday == 5:  # Saturday = 5
+            is_open = False
+            reason = "Weekend - Market closed"
+            # Next open: Sunday 5pm
+            days_until_sunday = 1
+            next_open_dt = now.replace(hour=17, minute=0, second=0, microsecond=0) + timedelta(days=days_until_sunday)
+            next_open = next_open_dt.isoformat()
+
+        # Sunday before 5pm
+        elif weekday == 6 and current_hour < 17:  # Sunday = 6
+            is_open = False
+            reason = "Weekend - Market opens at 5:00 PM EST"
+            next_open_dt = now.replace(hour=17, minute=0, second=0, microsecond=0)
+            next_open = next_open_dt.isoformat()
+
+        # Market is open
+        else:
+            is_open = True
+            reason = "Forex market is open 24 hours"
+
+            # Calculate next close (Friday 5pm)
+            days_until_friday = (4 - weekday) % 7
+            if days_until_friday == 0 and current_hour >= 17:
+                days_until_friday = 7
+            next_close_dt = now.replace(hour=17, minute=0, second=0, microsecond=0) + timedelta(days=days_until_friday)
+            next_close = next_close_dt.isoformat()
+
+        # Calculate time until next event
+        if not is_open and next_open:
+            next_open_dt = datetime.fromisoformat(next_open)
+            time_until = next_open_dt - now
+            hours_until = int(time_until.total_seconds() // 3600)
+            minutes_until = int((time_until.total_seconds() % 3600) // 60)
+            time_until_text = f"{hours_until}h {minutes_until}m"
+        elif is_open and next_close:
+            next_close_dt = datetime.fromisoformat(next_close)
+            time_until = next_close_dt - now
+            hours_until = int(time_until.total_seconds() // 3600)
+            minutes_until = int((time_until.total_seconds() % 3600) // 60)
+            time_until_text = f"{hours_until}h {minutes_until}m"
+        else:
+            time_until_text = None
+
+        return {
+            "is_open": is_open,
+            "reason": reason,
+            "current_time": now.isoformat(),
+            "timezone": "America/New_York (EST/EDT)",
+            "next_open": next_open,
+            "next_close": next_close,
+            "time_until_event": time_until_text,
+            "market_hours": {
+                "description": "Forex markets open 24/5",
+                "open": "Sunday 5:00 PM EST",
+                "close": "Friday 5:00 PM EST"
+            }
+        }
+
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to check market status: {str(e)}"
         )

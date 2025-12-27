@@ -6,6 +6,7 @@ import Link from 'next/link';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { MarketStatus, MarketStatusBadge } from '@/components/market/MarketStatus';
 import {
   TrendingUp,
   TrendingDown,
@@ -55,9 +56,12 @@ export default function SignalsPage() {
                 <span className="text-sm text-gray-400">Live Signals</span>
               </div>
             </div>
-            <div className="flex items-center gap-3">
+            <div className="flex items-center gap-2 sm:gap-3">
+              <div className="hidden md:block">
+                <MarketStatusBadge />
+              </div>
               <Link href="/user">
-                <Button variant="outline" className="border-white/20 text-white hover:bg-white/10">
+                <Button variant="outline" className="border-white/20 text-white hover:bg-white/10 text-sm sm:text-base px-3 sm:px-4">
                   Dashboard
                 </Button>
               </Link>
@@ -65,9 +69,9 @@ export default function SignalsPage() {
                 onClick={() => refetch()}
                 size="icon"
                 variant="ghost"
-                className="text-white hover:bg-white/10"
+                className="text-white hover:bg-white/10 w-8 h-8 sm:w-10 sm:h-10"
               >
-                <RefreshCw className="w-4 h-4" />
+                <RefreshCw className="w-3 h-3 sm:w-4 sm:h-4" />
               </Button>
             </div>
           </div>
@@ -75,15 +79,20 @@ export default function SignalsPage() {
       </nav>
 
       {/* Main Content */}
-      <div className="relative max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+      <div className="relative max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 sm:py-8">
         {/* Page Header */}
-        <div className="mb-8">
-          <h1 className="text-4xl font-bold text-white mb-3">
+        <div className="mb-6 sm:mb-8">
+          <h1 className="text-2xl sm:text-3xl md:text-4xl font-bold text-white mb-2 sm:mb-3">
             Live Trading Signals
           </h1>
-          <p className="text-gray-400">
+          <p className="text-sm sm:text-base text-gray-400">
             Real-time XAUUSD signals across multiple timeframes
           </p>
+        </div>
+
+        {/* Market Status */}
+        <div className="mb-6 sm:mb-8">
+          <MarketStatus />
         </div>
 
         {/* Filters */}

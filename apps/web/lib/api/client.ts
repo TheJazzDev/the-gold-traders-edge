@@ -124,6 +124,20 @@ class APIClient {
     return response.data;
   }
 
+  // ==================== MARKET ====================
+
+  async getMarketStatus() {
+    const response = await this.client.get('/v1/market/status');
+    return response.data;
+  }
+
+  async getLatestPrice(symbol: string = 'XAUUSD') {
+    const response = await this.client.get('/v1/market/price/latest', {
+      params: { symbol },
+    });
+    return response.data;
+  }
+
   // ==================== HEALTH ====================
 
   async healthCheck() {
