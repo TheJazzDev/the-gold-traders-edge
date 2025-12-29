@@ -384,11 +384,14 @@ async def get_service_status(db: Session = Depends(get_db_session)):
     repo = SettingsRepository(db)
 
     return {
-        "service_status": repo.get("service_status", "unknown"),
+        "status": repo.get("service_status", "running"),
+        "service_status": repo.get("service_status", "running"),
         "auto_trading_enabled": repo.get("auto_trading_enabled", False),
         "dry_run_mode": repo.get("dry_run_mode", False),
         "max_risk_per_trade": repo.get("max_risk_per_trade", 1.0),
         "max_positions": repo.get("max_positions", 5),
         "enabled_timeframes": repo.get("enabled_timeframes", []),
         "enabled_strategies": repo.get("enabled_strategies", []),
+        "data_feed_type": repo.get("data_feed_type", "metaapi"),
+        "active_timeframes": repo.get("enabled_timeframes", ["5m", "15m", "30m", "1h", "4h", "1d"]),
     }
