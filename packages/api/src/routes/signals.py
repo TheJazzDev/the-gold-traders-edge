@@ -31,19 +31,47 @@ router = APIRouter(prefix="/v1/signals", tags=["signals"])
 @router.get("/history")
 async def get_signals_history(
     limit: int = Query(10, ge=1, le=100),
+    offset: int = Query(0, ge=0),
+    status: Optional[str] = Query(None),
+    strategy: Optional[str] = Query(None),
+    timeframe: Optional[str] = Query(None),
     db: Session = Depends(get_db)
 ):
     """
-    Get signal history with limit.
+    Get signal history with limit and filters.
 
     Args:
         limit: Number of signals to return
+        offset: Offset for pagination
+        status: Filter by status (optional)
+        strategy: Filter by strategy (optional)
+        timeframe: Filter by timeframe (optional)
         db: Database session
 
     Returns:
-        List of recent signals
+        List of signals with total count
     """
-    signals = db.query(Signal).order_by(desc(Signal.timestamp)).limit(limit).all()
+    query = db.query(Signal)
+
+    # Apply filters
+    if status:
+        try:
+            status_enum = SignalStatus(status)
+            query = query.filter(Signal.status == status_enum)
+        except ValueError:
+            pass
+
+    if strategy:
+        query = query.filter(Signal.strategy_name == strategy)
+
+    if timeframe:
+        query = query.filter(Signal.timeframe == timeframe)
+
+    # Get total count
+    total = query.count()
+
+    # Get paginated signals
+    signals = query.order_by(desc(Signal.timestamp)).offset(offset).limit(limit).all()
 
     return {
         "signals": [
@@ -54,16 +82,21 @@ async def get_signals_history(
                 "timeframe": s.timeframe,
                 "strategy_name": s.strategy_name,
                 "direction": s.direction.value,
-                "entry_price": s.entry_price,
-                "stop_loss": s.stop_loss,
-                "take_profit": s.take_profit,
-                "confidence": s.confidence,
+                "entry_price": float(s.entry_price) if s.entry_price else 0.0,
+                "stop_loss": float(s.stop_loss) if s.stop_loss else 0.0,
+                "take_profit": float(s.take_profit) if s.take_profit else 0.0,
+                "confidence": float(s.confidence) if s.confidence else 0.0,
+                "risk_pips": float(s.risk_pips) if s.risk_pips else 0.0,
+                "reward_pips": float(s.reward_pips) if s.reward_pips else 0.0,
+                "risk_reward_ratio": float(s.risk_reward_ratio) if s.risk_reward_ratio else 0.0,
                 "status": s.status.value,
-                "pnl": s.pnl,
-                "pnl_pct": s.pnl_pct,
-                "risk_reward_ratio": s.risk_reward_ratio
+                "pnl": float(s.pnl) if s.pnl else None,
+                "pnl_pct": float(s.pnl_pct) if s.pnl_pct else None,
             } for s in signals
-        ]
+        ],
+        "total": total,
+        "limit": limit,
+        "offset": offset,
     }
 
 
