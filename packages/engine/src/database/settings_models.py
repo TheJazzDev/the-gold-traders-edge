@@ -7,7 +7,7 @@ Settings are stored in PostgreSQL and can be updated via web admin panel.
 
 from sqlalchemy import Column, Integer, String, Float, Boolean, DateTime, JSON, Enum as SQLEnum
 from sqlalchemy.sql import func
-from database.base import Base
+from database.models import Base
 import enum
 
 

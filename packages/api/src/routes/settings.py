@@ -15,7 +15,7 @@ from pathlib import Path
 # Add engine to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent / 'engine' / 'src'))
 
-from database.connection import get_db_session
+from database.connection import get_db
 from database.settings_models import Setting, SettingCategory
 from database.settings_repository import SettingsRepository
 from sqlalchemy.orm import Session
@@ -70,7 +70,7 @@ class SettingsCategoryResponse(BaseModel):
 @router.get("/", response_model=List[SettingResponse])
 async def get_all_settings(
     category: Optional[str] = None,
-    db: Session = Depends(get_db_session)
+    db: Session = Depends(get_db)
 ):
     """
     Get all settings or filter by category.
@@ -115,7 +115,7 @@ async def get_all_settings(
 
 
 @router.get("/categories", response_model=List[SettingsCategoryResponse])
-async def get_settings_by_category(db: Session = Depends(get_db_session)):
+async def get_settings_by_category(db: Session = Depends(get_db)):
     """
     Get all settings grouped by category.
 
@@ -156,7 +156,7 @@ async def get_settings_by_category(db: Session = Depends(get_db_session)):
 
 
 @router.get("/{key}", response_model=SettingResponse)
-async def get_setting(key: str, db: Session = Depends(get_db_session)):
+async def get_setting(key: str, db: Session = Depends(get_db)):
     """
     Get a specific setting by key.
 
@@ -195,7 +195,7 @@ async def get_setting(key: str, db: Session = Depends(get_db_session)):
 async def update_setting(
     key: str,
     request: SettingUpdateRequest,
-    db: Session = Depends(get_db_session)
+    db: Session = Depends(get_db)
 ):
     """
     Update a setting value.
@@ -251,7 +251,7 @@ async def update_setting(
 @router.put("/bulk/update")
 async def bulk_update_settings(
     request: BulkSettingsUpdateRequest,
-    db: Session = Depends(get_db_session)
+    db: Session = Depends(get_db)
 ):
     """
     Update multiple settings at once.
@@ -308,7 +308,7 @@ async def bulk_update_settings(
 async def reset_setting_to_default(
     key: str,
     modified_by: str = "admin",
-    db: Session = Depends(get_db_session)
+    db: Session = Depends(get_db)
 ):
     """
     Reset a setting to its default value.
@@ -350,7 +350,7 @@ async def reset_setting_to_default(
 @router.post("/reset-all")
 async def reset_all_settings(
     modified_by: str = "admin",
-    db: Session = Depends(get_db_session)
+    db: Session = Depends(get_db)
 ):
     """
     Reset ALL settings to their default values.
@@ -374,7 +374,7 @@ async def reset_all_settings(
 
 
 @router.get("/service/status")
-async def get_service_status(db: Session = Depends(get_db_session)):
+async def get_service_status(db: Session = Depends(get_db)):
     """
     Get current service status and key settings.
 
