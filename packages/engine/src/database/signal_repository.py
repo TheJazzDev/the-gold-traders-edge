@@ -107,14 +107,26 @@ class SignalRepository:
             .all()
         )
 
-    def get_open_signals(self) -> List[Signal]:
+    def get_open_signals(self, symbol: str = None, timeframe: str = None) -> List[Signal]:
         """
-        Get all currently open signals.
+        Get all signals that are still open (PENDING or ACTIVE), optionally
+        filtered by symbol and/or timeframe.
+
+        Args:
+            symbol: If given, only signals for this symbol
+            timeframe: If given, only signals for this timeframe
 
         Returns:
-            List of active signals
+            List of open signals, most recent first
         """
-        return self.get_by_status(SignalStatus.ACTIVE)
+        query = self.session.query(Signal).filter(
+            Signal.status.in_([SignalStatus.PENDING, SignalStatus.ACTIVE])
+        )
+        if symbol:
+            query = query.filter(Signal.symbol == symbol)
+        if timeframe:
+            query = query.filter(Signal.timeframe == timeframe)
+        return query.order_by(desc(Signal.timestamp)).all()
 
     def get_pending_signals(self) -> List[Signal]:
         """
@@ -176,6 +188,49 @@ class SignalRepository:
             signal.pnl_pips = (exit_price - signal.actual_entry) * 10
         else:
             signal.pnl_pips = (signal.actual_entry - exit_price) * 10
+
+        return self.update(signal)
+
+    def close_open_signal(
+        self,
+        signal_id: int,
+        exit_price: Optional[float],
+        status: SignalStatus,
+        closed_at: datetime,
+        note_suffix: str = "",
+    ) -> Optional[Signal]:
+        """
+        Close a signal that was never executed via MT5 (no actual_entry set),
+        computing pnl_pips from the planned entry_price instead. Used by the
+        signal outcome tracker for TP/SL hits and expiry — does not set
+        pnl/pnl_pct since there is no real account behind these signals yet.
+
+        Args:
+            signal_id: ID of signal to close
+            exit_price: Exit price, or None for an expiry with no resolution
+            status: CLOSED_TP, CLOSED_SL, or CANCELLED (expiry)
+            closed_at: Timestamp of the candle that triggered this close
+            note_suffix: Text appended to the signal's existing notes
+
+        Returns:
+            Updated signal or None if not found
+        """
+        signal = self.get_by_id(signal_id)
+        if not signal:
+            return None
+
+        signal.actual_exit = exit_price
+        signal.status = status
+        signal.closed_at = closed_at
+
+        if exit_price is not None:
+            if signal.direction == SignalDirection.LONG:
+                signal.pnl_pips = (exit_price - signal.entry_price) * 10
+            else:
+                signal.pnl_pips = (signal.entry_price - exit_price) * 10
+
+        if note_suffix:
+            signal.notes = (signal.notes or "") + note_suffix
 
         return self.update(signal)
 
