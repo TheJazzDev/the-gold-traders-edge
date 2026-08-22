@@ -262,62 +262,62 @@ class SignalRepository:
 
         return self.update(signal)
 
-    def get_performance_stats(self, days: int = 30) -> dict:
+    def get_performance_stats(self, days: int = 30, symbol: str = None, timeframe: str = None) -> dict:
         """
-        Calculate performance statistics for the last N days.
+        Calculate signal outcome statistics for the last N days.
+
+        No dollar P&L is used (there is no real account behind these signals
+        yet) — win rate is measured over resolved (TP/SL) signals, and
+        edge is measured in R-multiples (pnl_pips / risk_pips).
 
         Args:
             days: Number of days to analyze
+            symbol: If given, only signals for this symbol
+            timeframe: If given, only signals for this timeframe
 
         Returns:
-            Dictionary with performance metrics
+            Dictionary with keys: total_signals, tp_hits, sl_hits, expired,
+            still_open, closed_manual, win_rate, avg_r_multiple, net_r_multiple
         """
         cutoff_date = datetime.utcnow() - timedelta(days=days)
+        filters = [Signal.timestamp >= cutoff_date]
+        if symbol:
+            filters.append(Signal.symbol == symbol)
+        if timeframe:
+            filters.append(Signal.timeframe == timeframe)
 
-        # Get all closed signals in period
-        closed_signals = (
-            self.session.query(Signal)
-            .filter(
-                and_(
-                    Signal.timestamp >= cutoff_date,
-                    Signal.status.in_([SignalStatus.CLOSED_TP, SignalStatus.CLOSED_SL, SignalStatus.CLOSED_MANUAL])
-                )
-            )
-            .all()
-        )
+        all_signals = self.session.query(Signal).filter(and_(*filters)).all()
 
-        if not closed_signals:
-            return {
-                'total_signals': 0,
-                'winning_signals': 0,
-                'losing_signals': 0,
-                'win_rate': 0.0,
-                'total_pnl': 0.0,
-                'avg_win': 0.0,
-                'avg_loss': 0.0,
-                'largest_win': 0.0,
-                'largest_loss': 0.0,
-                'profit_factor': 0.0,
-            }
+        tp_hits = [s for s in all_signals if s.status == SignalStatus.CLOSED_TP]
+        sl_hits = [s for s in all_signals if s.status == SignalStatus.CLOSED_SL]
+        expired = [
+            s for s in all_signals
+            if s.status == SignalStatus.CANCELLED and s.notes and '[expired' in s.notes
+        ]
+        still_open = [s for s in all_signals if s.status in (SignalStatus.PENDING, SignalStatus.ACTIVE)]
+        closed_manual = [s for s in all_signals if s.status == SignalStatus.CLOSED_MANUAL]
 
-        # Calculate metrics
-        winners = [s for s in closed_signals if s.pnl and s.pnl > 0]
-        losers = [s for s in closed_signals if s.pnl and s.pnl < 0]
+        resolved = tp_hits + sl_hits
+        win_rate = (len(tp_hits) / len(resolved) * 100) if resolved else 0.0
 
-        total_wins = sum(s.pnl for s in winners)
-        total_losses = abs(sum(s.pnl for s in losers))
+        r_multiples = [
+            s.pnl_pips / s.risk_pips
+            for s in resolved
+            if s.risk_pips and s.pnl_pips is not None
+        ]
+        avg_r = (sum(r_multiples) / len(r_multiples)) if r_multiples else 0.0
+        net_r = sum(r_multiples)
 
         return {
-            'total_signals': len(closed_signals),
-            'winning_signals': len(winners),
-            'losing_signals': len(losers),
-            'win_rate': (len(winners) / len(closed_signals) * 100) if closed_signals else 0.0,
-            'total_pnl': sum(s.pnl for s in closed_signals if s.pnl),
-            'avg_win': (total_wins / len(winners)) if winners else 0.0,
-            'avg_loss': (total_losses / len(losers)) if losers else 0.0,
-            'largest_win': max((s.pnl for s in winners), default=0.0),
-            'largest_loss': min((s.pnl for s in losers), default=0.0),
-            'profit_factor': (total_wins / total_losses) if total_losses > 0 else 0.0,
+            'total_signals': len(all_signals),
+            'tp_hits': len(tp_hits),
+            'sl_hits': len(sl_hits),
+            'expired': len(expired),
+            'still_open': len(still_open),
+            'closed_manual': len(closed_manual),
+            'win_rate': win_rate,
+            'avg_r_multiple': avg_r,
+            'net_r_multiple': net_r,
         }
 
     def delete(self, signal_id: int) -> bool:

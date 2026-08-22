@@ -31,7 +31,7 @@ def repo(session):
 
 def make_signal(symbol="XAUUSD", timeframe="1h", status=SignalStatus.PENDING, direction=SignalDirection.LONG):
     return Signal(
-        timestamp=datetime(2026, 1, 1, 10, 0),
+        timestamp=datetime.utcnow() - timedelta(hours=1),
         symbol=symbol,
         timeframe=timeframe,
         strategy_name="Test Strategy",
@@ -124,3 +124,55 @@ class TestCloseOpenSignal:
             signal_id=99999, exit_price=2000.0,
             status=SignalStatus.CLOSED_TP, closed_at=datetime.utcnow(),
         ) is None
+
+
+class TestGetPerformanceStats:
+    def test_counts_and_rates_by_status(self, repo):
+        # 2 TP hits, 1 SL hit, 1 expired, 1 still open
+        tp1 = repo.create(make_signal(status=SignalStatus.PENDING))
+        tp1.risk_pips, tp1.pnl_pips = 100.0, 300.0
+        repo.update(tp1)
+        repo.close_open_signal(tp1.id, 2030.0, SignalStatus.CLOSED_TP, datetime(2026, 1, 1, 12, 0))
+
+        tp2 = repo.create(make_signal(status=SignalStatus.PENDING))
+        tp2.risk_pips, tp2.pnl_pips = 100.0, 300.0
+        repo.update(tp2)
+        repo.close_open_signal(tp2.id, 2030.0, SignalStatus.CLOSED_TP, datetime(2026, 1, 1, 12, 0))
+
+        sl1 = repo.create(make_signal(status=SignalStatus.PENDING))
+        sl1.risk_pips, sl1.pnl_pips = 100.0, -100.0
+        repo.update(sl1)
+        repo.close_open_signal(sl1.id, 1990.0, SignalStatus.CLOSED_SL, datetime(2026, 1, 1, 12, 0))
+
+        expired1 = repo.create(make_signal(status=SignalStatus.PENDING))
+        repo.close_open_signal(
+            expired1.id, None, SignalStatus.CANCELLED, datetime(2026, 1, 1, 12, 0),
+            note_suffix=" [expired after 48h with no resolution]",
+        )
+
+        repo.create(make_signal(status=SignalStatus.PENDING))  # still open
+
+        stats = repo.get_performance_stats(days=30)
+
+        assert stats['total_signals'] == 5
+        assert stats['tp_hits'] == 2
+        assert stats['sl_hits'] == 1
+        assert stats['expired'] == 1
+        assert stats['still_open'] == 1
+        assert stats['closed_manual'] == 0
+        assert stats['win_rate'] == pytest.approx(2 / 3 * 100)  # 2 TP out of 3 resolved
+        assert stats['avg_r_multiple'] == pytest.approx((3.0 + 3.0 + (-1.0)) / 3)
+        assert stats['net_r_multiple'] == pytest.approx(3.0 + 3.0 + (-1.0))
+
+    def test_empty_period_returns_zeroed_stats(self, repo):
+        stats = repo.get_performance_stats(days=30)
+        assert stats['total_signals'] == 0
+        assert stats['win_rate'] == 0.0
+        assert stats['avg_r_multiple'] == 0.0
+
+    def test_filters_by_symbol_and_timeframe(self, repo):
+        repo.create(make_signal(symbol="XAUUSD", timeframe="1h", status=SignalStatus.PENDING))
+        repo.create(make_signal(symbol="XAUUSD", timeframe="4h", status=SignalStatus.PENDING))
+
+        stats = repo.get_performance_stats(days=30, symbol="XAUUSD", timeframe="1h")
+        assert stats['total_signals'] == 1
