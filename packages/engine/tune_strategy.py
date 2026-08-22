@@ -146,6 +146,11 @@ def validate_rule(df, rule_name, config):
     return stats, durations_hours
 
 
+def passes_pf_gate(stats, min_trades):
+    """A rule 'passes' a profitability gate if PF > 1.0 with enough trades to trust it."""
+    return stats['profit_factor'] > 1.0 and stats['total_trades'] >= min_trades
+
+
 def percentile(values, pct):
     """Linear-interpolation percentile, matching numpy's default method."""
     if not values:
@@ -191,15 +196,17 @@ def main():
             'config': tuned_config,
         }
 
-        passed_individually = (
-            individual_test_stats['profit_factor'] > 1.0
-            and individual_test_stats['total_trades'] >= MIN_TEST_TRADES
-        )
-        print(f"  train: PF={train_stats['profit_factor']:.2f} trades={train_stats['total_trades']}")
+        # Candidacy is gated on TRAIN-slice stats only. test_df is never used
+        # to decide which rules feed the shared config — it stays untouched
+        # until the final held-out validation below, so it's only used once.
+        passed_individually = passes_pf_gate(train_stats, MIN_TRAIN_TRADES)
         print(
-            f"  test (own config): PF={individual_test_stats['profit_factor']:.2f} "
-            f"trades={individual_test_stats['total_trades']} "
+            f"  train: PF={train_stats['profit_factor']:.2f} trades={train_stats['total_trades']} "
             f"-> {'candidate' if passed_individually else 'rejected'}"
+        )
+        print(
+            f"  test (own config, reporting only): PF={individual_test_stats['profit_factor']:.2f} "
+            f"trades={individual_test_stats['total_trades']}"
         )
         if passed_individually:
             candidate_rules.append(rule_name)
@@ -221,7 +228,7 @@ def main():
     for rule_name in candidate_rules:
         stats, durations = validate_rule(test_df, rule_name, final_config)
         final_validation[rule_name] = stats
-        passed = stats['profit_factor'] > 1.0 and stats['total_trades'] >= MIN_TEST_TRADES
+        passed = passes_pf_gate(stats, MIN_TEST_TRADES)
         print(f"  {rule_name}: PF={stats['profit_factor']:.2f} trades={stats['total_trades']} -> {'ENABLED' if passed else 'DISABLED'}")
         if passed:
             enabled_rules.append(rule_name)

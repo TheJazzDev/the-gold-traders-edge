@@ -9,7 +9,15 @@ import pytest
 sys.path.insert(0, str(Path(__file__).parent.parent))
 sys.path.insert(0, str(Path(__file__).parent.parent / 'src'))
 
-from tune_strategy import split_train_test, percentile, BASE_1H_CONFIG, run_isolated_backtest
+from tune_strategy import (
+    split_train_test,
+    percentile,
+    BASE_1H_CONFIG,
+    run_isolated_backtest,
+    passes_pf_gate,
+    MIN_TRAIN_TRADES,
+    MIN_TEST_TRADES,
+)
 
 
 class TestSplitTrainTest:
@@ -35,6 +43,33 @@ class TestPercentile:
 
     def test_empty_list_returns_zero(self):
         assert percentile([], 95) == 0.0
+
+
+class TestPassesPfGate:
+    """Regression coverage for the fix: candidate_rules is gated on train-slice
+    stats (MIN_TRAIN_TRADES), never on test-slice stats, so the held-out test
+    slice is used exactly once (the final shared-config re-validation)."""
+
+    def test_profitable_with_enough_trades_passes(self):
+        stats = {'profit_factor': 1.5, 'total_trades': MIN_TRAIN_TRADES}
+        assert passes_pf_gate(stats, MIN_TRAIN_TRADES) is True
+
+    def test_unprofitable_fails_even_with_enough_trades(self):
+        stats = {'profit_factor': 0.9, 'total_trades': 100}
+        assert passes_pf_gate(stats, MIN_TRAIN_TRADES) is False
+
+    def test_too_few_trades_fails_even_if_profitable(self):
+        stats = {'profit_factor': 5.0, 'total_trades': MIN_TRAIN_TRADES - 1}
+        assert passes_pf_gate(stats, MIN_TRAIN_TRADES) is False
+
+    def test_train_gate_uses_a_higher_trade_bar_than_test_gate(self):
+        # A rule with a trade count between the two thresholds would have
+        # passed a test-slice gate but must fail the train-slice gate that
+        # now controls candidate_rules selection.
+        stats = {'profit_factor': 1.2, 'total_trades': MIN_TEST_TRADES}
+        assert MIN_TEST_TRADES < MIN_TRAIN_TRADES
+        assert passes_pf_gate(stats, MIN_TEST_TRADES) is True
+        assert passes_pf_gate(stats, MIN_TRAIN_TRADES) is False
 
 
 class TestRunIsolatedBacktest:
