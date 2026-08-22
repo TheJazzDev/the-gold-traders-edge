@@ -25,6 +25,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from data.realtime_feed import RealtimeDataFeed, create_datafeed
 from signals.gold_strategy import GoldStrategy
+from signals.outcome_tracker import SignalOutcomeTracker
 from backtesting.engine import Signal as StrategySignal, TradeDirection
 
 
@@ -276,7 +277,8 @@ class RealtimeSignalGenerator:
         data_feed: RealtimeDataFeed,
         strategy: Optional[GoldStrategy] = None,
         validator: Optional[SignalValidator] = None,
-        lookback_periods: int = 200
+        lookback_periods: int = 200,
+        outcome_tracker: Optional["SignalOutcomeTracker"] = None,
     ):
         """
         Initialize signal generator.
@@ -289,6 +291,7 @@ class RealtimeSignalGenerator:
         """
         self.data_feed = data_feed
         self.lookback_periods = lookback_periods
+        self.outcome_tracker = outcome_tracker
 
         # Initialize strategy (Momentum Equilibrium only by default)
         if strategy is None:
@@ -407,6 +410,9 @@ class RealtimeSignalGenerator:
             f"📊 Candle close at {df.index[-1]} | "
             f"Close: ${df['close'].iloc[-1]:.2f}"
         )
+
+        if self.outcome_tracker is not None:
+            self.outcome_tracker.check_candle(df.iloc[-1], df.index[-1])
 
         # Generate signal
         signal = self.generate_signal(df)

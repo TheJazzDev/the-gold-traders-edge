@@ -33,6 +33,7 @@ from signals.subscribers.mt5_subscriber import MT5Subscriber
 from signals.subscribers.telegram_subscriber import TelegramSubscriber
 from signals.subscribers.dedup_subscriber import DeduplicationSubscriber
 from signals.signal_deduplicator import get_deduplicator
+from signals.outcome_tracker import SignalOutcomeTracker
 from trading.mt5_config import MT5Config
 from trading.mt5_connection import create_mt5_connection
 from trading.risk_manager import RiskManager
@@ -130,11 +131,19 @@ class TimeframeWorker:
                 timeframe=self.timeframe
             )
 
-            # Create strategy - all 5 profitable rules enabled by default
+            # Create strategy - default config until Task 12 wires in the
+            # tuned 1h config
             strategy = GoldStrategy()
-            # All rules are already enabled by default (they're all profitable!)
 
-            logger.info(f"   [{self.timeframe}] All 5 profitable rules enabled: {list(strategy.rules_enabled.keys())}")
+            enabled_names = [name for name, on in strategy.rules_enabled.items() if on]
+            logger.info(f"   [{self.timeframe}] Enabled rules: {enabled_names}")
+
+            outcome_tracker = SignalOutcomeTracker(
+                database_url=self.database_url,
+                symbol='XAUUSD',
+                timeframe=self.timeframe,
+                expiry_hours=48.0,  # placeholder until Task 12 loads the data-derived value
+            )
 
             # Create validator
             validator = SignalValidator(min_rr_ratio=1.5)
@@ -143,7 +152,8 @@ class TimeframeWorker:
             self.generator = RealtimeSignalGenerator(
                 data_feed=data_feed,
                 strategy=strategy,
-                validator=validator
+                validator=validator,
+                outcome_tracker=outcome_tracker
             )
 
             # Add SHARED deduplication subscriber (same instance across ALL workers)
