@@ -38,6 +38,8 @@ from trading.mt5_config import MT5Config
 from trading.mt5_connection import create_mt5_connection
 from trading.risk_manager import RiskManager
 from database.connection import DatabaseManager
+from database.signal_repository import SignalRepository
+from report import build_report_text
 
 # Configure logging
 logging.basicConfig(
@@ -254,6 +256,7 @@ class MultiTimeframeService:
         # DATABASE-BACKED: Loads recent signals from DB on startup to prevent duplicates after restart
         db_subscriber = DatabaseSubscriber(database_url=self.database_url)
         telegram_subscriber = TelegramSubscriber()
+        self.telegram_subscriber = telegram_subscriber  # kept for weekly reports
 
         self.shared_dedup_subscriber = DeduplicationSubscriber(
             subscribers=[db_subscriber, telegram_subscriber],
@@ -319,15 +322,22 @@ class MultiTimeframeService:
     def _monitor_loop(self):
         """
         Monitor all workers and display status periodically.
-        Also sends keep-alive pings to prevent Railway from sleeping.
+        Also sends keep-alive pings to prevent Railway from sleeping,
+        and a weekly performance report to Telegram.
         """
         last_status_time = datetime.now()
         last_keepalive_time = datetime.now()
+        last_report_time = datetime.now()
         status_interval = 300  # 5 minutes
         keepalive_interval = 240  # 4 minutes (ping API to keep it awake)
+        report_interval = 7 * 24 * 3600  # weekly
 
         while self.is_running:
             time.sleep(10)  # Check every 10 seconds
+
+            if (datetime.now() - last_report_time).total_seconds() >= report_interval:
+                self._send_weekly_report()
+                last_report_time = datetime.now()
 
             # Check if any workers have died
             for timeframe, worker in self.workers.items():
@@ -381,6 +391,21 @@ class MultiTimeframeService:
             print(f"{timeframe:>4} | {status} | Candles: {candles:>5} | Signals: {signals:>3}")
 
         print("=" * 80 + "\n")
+
+    def _send_weekly_report(self):
+        """Send the last 7 days of signal performance stats to Telegram."""
+        from database.connection import DatabaseManager
+        try:
+            db_manager = DatabaseManager(self.database_url)
+            with db_manager.session_scope() as session:
+                repo = SignalRepository(session)
+                stats = repo.get_performance_stats(days=7)
+
+            message = "📅 Weekly Performance Report\n\n" + build_report_text(stats, days=7)
+            self.telegram_subscriber.send_custom_message(message)
+            logger.info("✅ Weekly performance report sent to Telegram")
+        except Exception as e:
+            logger.error(f"Failed to send weekly report: {e}", exc_info=True)
 
 
 def main():
