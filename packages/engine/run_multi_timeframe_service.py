@@ -125,7 +125,7 @@ class TimeframeWorker:
             logger.info(f"   [{self.timeframe}] Using data feed: {datafeed_type}")
 
             data_feed = create_datafeed(
-                datafeed_type=datafeed_type,
+                feed_type=datafeed_type,
                 symbol='XAUUSD',
                 timeframe=self.timeframe
             )

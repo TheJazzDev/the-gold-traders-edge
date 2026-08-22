@@ -440,7 +440,8 @@ class RealtimeSignalGenerator:
         logger.info("=" * 70)
         logger.info(f"Symbol: {self.data_feed.symbol}")
         logger.info(f"Timeframe: {self.data_feed.timeframe}")
-        logger.info(f"Strategy: Momentum Equilibrium")
+        enabled_rules = [name for name, on in self.strategy.rules_enabled.items() if on]
+        logger.info(f"Strategy: {', '.join(enabled_rules)}")
         logger.info(f"Subscribers: {len(self.subscribers)}")
         logger.info("=" * 70)
 
