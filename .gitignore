@@ -98,3 +98,6 @@ secrets/
 # ----- Misc -----
 *.bak
 *.tmp
+
+# understand-anything knowledge graph output (generated, not source)
+.understand-anything/

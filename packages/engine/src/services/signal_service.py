@@ -32,7 +32,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 from data.realtime_feed import create_datafeed, RealtimeDataFeed
 from signals.gold_strategy import GoldStrategy
 from signals.realtime_generator import RealtimeSignalGenerator, SignalValidator
-from signals.subscribers import DatabaseSubscriber, LoggerSubscriber, ConsoleSubscriber
+from signals.subscribers import DatabaseSubscriber, LoggerSubscriber, ConsoleSubscriber, TelegramSubscriber
 
 
 # Configure logging
@@ -76,6 +76,7 @@ class ServiceConfig:
         self.enable_database = os.getenv('ENABLE_DATABASE', 'true').lower() == 'true'
         self.enable_logger = os.getenv('ENABLE_LOGGER', 'true').lower() == 'true'
         self.enable_console = os.getenv('ENABLE_CONSOLE', 'true').lower() == 'true'
+        self.enable_telegram = os.getenv('ENABLE_TELEGRAM', 'false').lower() == 'true'
 
         # Signal validation configuration
         self.min_rr_ratio = float(os.getenv('MIN_RR_RATIO', '1.5'))
@@ -93,6 +94,7 @@ class ServiceConfig:
             'enable_database': self.enable_database,
             'enable_logger': self.enable_logger,
             'enable_console': self.enable_console,
+            'enable_telegram': self.enable_telegram,
             'min_rr_ratio': self.min_rr_ratio,
             'heartbeat_interval': self.heartbeat_interval,
         }
@@ -158,16 +160,9 @@ class SignalService:
 
     def _create_strategy(self) -> GoldStrategy:
         """Create and configure trading strategy."""
-        logger.info("Creating strategy: Momentum Equilibrium only")
-
         strategy = GoldStrategy()
-
-        # Disable all rules except Momentum Equilibrium
-        for rule_name in strategy.rules_enabled.keys():
-            strategy.rules_enabled[rule_name] = False
-
-        strategy.rules_enabled['momentum_equilibrium'] = True
-
+        enabled = [name for name, on in strategy.rules_enabled.items() if on]
+        logger.info(f"Creating strategy with rules enabled: {', '.join(enabled)}")
         return strategy
 
     def _setup_subscribers(self, generator: RealtimeSignalGenerator):
@@ -192,7 +187,16 @@ class SignalService:
             generator.add_subscriber(console_subscriber)
             logger.info("✅ ConsoleSubscriber enabled")
 
-        if not any([self.config.enable_database, self.config.enable_logger, self.config.enable_console]):
+        # Telegram subscriber
+        if self.config.enable_telegram:
+            telegram_subscriber = TelegramSubscriber()
+            if telegram_subscriber.enabled:
+                generator.add_subscriber(telegram_subscriber)
+                logger.info("✅ TelegramSubscriber enabled")
+            else:
+                logger.warning("⚠️  ENABLE_TELEGRAM=true but TELEGRAM_BOT_TOKEN/TELEGRAM_CHAT_ID missing — skipping")
+
+        if not any([self.config.enable_database, self.config.enable_logger, self.config.enable_console, self.config.enable_telegram]):
             logger.warning("⚠️  No subscribers enabled!")
 
     def _log_heartbeat(self):
@@ -342,7 +346,8 @@ class SignalService:
             logger.info("=" * 70)
             logger.info(f"Symbol: {self.config.symbol}")
             logger.info(f"Timeframe: {self.config.timeframe}")
-            logger.info(f"Strategy: Momentum Equilibrium")
+            enabled_rules = [name for name, on in strategy.rules_enabled.items() if on]
+            logger.info(f"Strategy: {', '.join(enabled_rules)}")
             logger.info(f"Data Feed: {self.config.datafeed_type}")
             logger.info(f"Subscribers: {len(self.generator.subscribers)}")
             logger.info("=" * 70)
