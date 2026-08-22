@@ -101,3 +101,6 @@ secrets/
 
 # understand-anything knowledge graph output (generated, not source)
 .understand-anything/
+
+# superpowers subagent-driven-development scratch workspace
+.superpowers/
