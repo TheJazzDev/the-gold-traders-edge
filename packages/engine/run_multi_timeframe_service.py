@@ -15,6 +15,7 @@ All signals are saved to the same database with timeframe tagged.
 
 import sys
 import os
+import json
 from pathlib import Path
 import logging
 import threading
@@ -53,8 +54,11 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
-# All timeframes to monitor
-TIMEFRAMES = ['5m', '15m', '30m', '1h', '4h', '1d']
+# Only 1H has been re-tuned and validated against real market data
+# (see docs/superpowers/specs/2026-08-22-signal-validation-and-outcome-tracking-design.md).
+# The other timeframes are left available in the code but not run live
+# until each is independently validated the same way.
+TIMEFRAMES = ['1h']
 
 # ALL 5 PROFITABLE RULES - Unprofitable ones deleted from codebase!
 PROFITABLE_RULES = [
@@ -133,9 +137,22 @@ class TimeframeWorker:
                 timeframe=self.timeframe
             )
 
-            # Create strategy - default config until Task 12 wires in the
-            # tuned 1h config
-            strategy = GoldStrategy()
+            # Load the tuned config for this timeframe if one exists;
+            # otherwise fall back to defaults (no other timeframe has a
+            # tuned config yet — see TIMEFRAMES above).
+            tuned_config_path = Path(__file__).parent / 'tuned_configs' / f'{self.timeframe}.json'
+            if tuned_config_path.exists():
+                with open(tuned_config_path) as f:
+                    tuned = json.load(f)
+                strategy = GoldStrategy(config=tuned['config'])
+                for name in strategy.rules_enabled:
+                    strategy.rules_enabled[name] = name in tuned['enabled_rules']
+                expiry_hours = tuned['expiry_hours']
+                logger.info(f"   [{self.timeframe}] Loaded tuned config from {tuned_config_path}")
+            else:
+                strategy = GoldStrategy()
+                expiry_hours = 48.0
+                logger.warning(f"   [{self.timeframe}] No tuned config found at {tuned_config_path}, using untuned defaults")
 
             enabled_names = [name for name, on in strategy.rules_enabled.items() if on]
             logger.info(f"   [{self.timeframe}] Enabled rules: {enabled_names}")
@@ -144,7 +161,7 @@ class TimeframeWorker:
                 database_url=self.database_url,
                 symbol='XAUUSD',
                 timeframe=self.timeframe,
-                expiry_hours=48.0,  # placeholder until Task 12 loads the data-derived value
+                expiry_hours=expiry_hours,
             )
 
             # Create validator
@@ -275,9 +292,16 @@ class MultiTimeframeService:
         print("📊 MULTI-TIMEFRAME SIGNAL SERVICE")
         print("=" * 80)
         print(f"\n🎯 Monitoring Timeframes: {', '.join(self.timeframes)}")
-        print(f"📈 Enabled Rules ({len(PROFITABLE_RULES)}):")
-        for rule in PROFITABLE_RULES:
-            print(f"   ✅ {rule}")
+        for timeframe in self.timeframes:
+            tuned_config_path = Path(__file__).parent / 'tuned_configs' / f'{timeframe}.json'
+            if tuned_config_path.exists():
+                with open(tuned_config_path) as f:
+                    enabled = json.load(f)['enabled_rules']
+            else:
+                enabled = PROFITABLE_RULES
+            print(f"📈 [{timeframe}] Enabled Rules ({len(enabled)}):")
+            for rule in enabled:
+                print(f"   ✅ {rule}")
         print(f"\n💾 Database: {self.database_url}")
         print(f"🤖 Auto-Trading: {'✅ ENABLED' if self.enable_trading else '❌ DISABLED (signals only)'}")
         if self.enable_trading and self.mt5_config:
