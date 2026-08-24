@@ -15,6 +15,7 @@ from tune_strategy import (
     percentile,
     json_safe,
     BASE_1H_CONFIG,
+    scale_baseline_config,
     run_isolated_backtest,
     passes_pf_gate,
     MIN_TRAIN_TRADES,
@@ -189,6 +190,53 @@ class TestResolvedStats:
         result = FakeBacktestResult([_trade(TradeStatus.CLOSED_MANUAL, 5000.0)])
         stats = _resolved_stats(result)
         assert stats == {'profit_factor': 0.0, 'total_trades': 0, 'win_rate': 0.0, 'net_profit_pct': 0.0}
+
+
+class TestScaleBaselineConfig:
+    """Regression coverage: scaling GoldStrategy.DEFAULT_CONFIG (4H) by the
+    same 4x factor used for the original hand-written BASE_1H_CONFIG must
+    reproduce it exactly, so generalizing tune_strategy.py to other
+    timeframes doesn't silently change the already-reviewed 1H behavior."""
+
+    EXPECTED_1H_BASELINE = {
+        'fib_tolerance': 0.015,
+        'swing_lookback': 20,
+        'swing_min_strength': 2,
+        'trend_lookback': 200,
+        'strong_momentum_threshold': 0.02,
+        'atr_period': 56,
+        'default_rr_ratio': 2.0,
+        'sl_buffer_atr': 0.3,
+        'ema_fast': 36,
+        'ema_slow': 84,
+        'rsi_period': 56,
+        'rsi_overbought': 70,
+        'rsi_oversold': 30,
+    }
+
+    def test_reproduces_the_original_1h_baseline_exactly(self):
+        scaled = scale_baseline_config(GoldStrategy.DEFAULT_CONFIG, from_minutes=240, to_minutes=60)
+        assert scaled == self.EXPECTED_1H_BASELINE
+
+    def test_candle_count_params_scale_by_the_timeframe_ratio(self):
+        scaled = scale_baseline_config(GoldStrategy.DEFAULT_CONFIG, from_minutes=240, to_minutes=15)
+        # 240/15 = 16x
+        assert scaled['swing_lookback'] == 5 * 16
+        assert scaled['trend_lookback'] == 50 * 16
+        assert scaled['atr_period'] == 14 * 16
+        assert scaled['ema_fast'] == 9 * 16
+        assert scaled['ema_slow'] == 21 * 16
+        assert scaled['rsi_period'] == 14 * 16
+
+    def test_ratio_params_pass_through_unscaled(self):
+        scaled = scale_baseline_config(GoldStrategy.DEFAULT_CONFIG, from_minutes=240, to_minutes=15)
+        assert scaled['fib_tolerance'] == 0.015
+        assert scaled['default_rr_ratio'] == 2.0
+        assert scaled['sl_buffer_atr'] == 0.3
+        assert scaled['rsi_overbought'] == 70
+        assert scaled['rsi_oversold'] == 30
+        assert scaled['swing_min_strength'] == 2
+        assert scaled['strong_momentum_threshold'] == 0.02
 
 
 class TestRunIsolatedBacktest:

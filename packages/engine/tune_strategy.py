@@ -53,24 +53,39 @@ RULES = [
     'order_block_retest',
 ]
 
-# 1H-equivalent starting points: candle-count lookbacks from the 4H-tuned
-# DEFAULT_CONFIG in gold_strategy.py, scaled 4x (1H candles cover 1/4 the
-# real time of 4H candles). Ratio/percentage params are left unscaled.
-BASE_1H_CONFIG = {
-    'fib_tolerance': 0.015,
-    'swing_lookback': 20,
-    'swing_min_strength': 2,
-    'trend_lookback': 200,
-    'strong_momentum_threshold': 0.02,
-    'atr_period': 56,
-    'default_rr_ratio': 2.0,
-    'sl_buffer_atr': 0.3,
-    'ema_fast': 36,
-    'ema_slow': 84,
-    'rsi_period': 56,
-    'rsi_overbought': 70,
-    'rsi_oversold': 30,
-}
+# Params whose natural unit is "how many candles" — the same real-time
+# window needs proportionally more candles on a finer timeframe. Everything
+# else (ratios, percentages, thresholds) is timeframe-independent.
+CANDLE_COUNT_PARAMS = {'swing_lookback', 'trend_lookback', 'atr_period', 'ema_fast', 'ema_slow', 'rsi_period'}
+
+# The 13 params tune_strategy.py tunes. GoldStrategy.DEFAULT_CONFIG also has
+# consolidation_min_candles/consolidation_max_range_atr, which aren't part
+# of the tuned set (rules just inherit GoldStrategy's own defaults for those).
+TUNABLE_PARAMS = [
+    'fib_tolerance', 'swing_lookback', 'swing_min_strength', 'trend_lookback',
+    'strong_momentum_threshold', 'atr_period', 'default_rr_ratio', 'sl_buffer_atr',
+    'ema_fast', 'ema_slow', 'rsi_period', 'rsi_overbought', 'rsi_oversold',
+]
+
+
+def scale_baseline_config(base_config, from_minutes, to_minutes):
+    """
+    Scale a config's candle-count params (lookback windows measured in
+    bars) by from_minutes/to_minutes — a finer timeframe needs
+    proportionally more candles to cover the same real-time window.
+    Ratio/percentage/threshold params pass through unscaled.
+    """
+    scale = from_minutes / to_minutes
+    scaled = {}
+    for param in TUNABLE_PARAMS:
+        value = base_config[param]
+        scaled[param] = round(value * scale) if param in CANDLE_COUNT_PARAMS else value
+    return scaled
+
+
+# 1H-equivalent starting point, matching the original hand-scaled values
+# exactly (see TestScaleBaselineConfig.test_reproduces_the_original_1h_baseline_exactly).
+BASE_1H_CONFIG = scale_baseline_config(GoldStrategy.DEFAULT_CONFIG, from_minutes=240, to_minutes=60)
 
 SEARCH_GRID = {
     'fib_tolerance': [0.010, 0.015, 0.020],
