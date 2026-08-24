@@ -103,6 +103,9 @@ class TimeframeWorker:
         self.generator: RealtimeSignalGenerator = None
         self.mt5_connection = None
         self.risk_manager = None
+        self.last_start_time: float = None
+        self.restart_backoff_seconds = 10
+        self.next_restart_allowed_at: float = None
 
     def start(self):
         """Start the worker thread."""
@@ -112,6 +115,7 @@ class TimeframeWorker:
             daemon=True
         )
         self.is_running = True
+        self.last_start_time = time.monotonic()
         self.thread.start()
         logger.info(f"✅ Started worker for {self.timeframe}")
 
@@ -121,6 +125,40 @@ class TimeframeWorker:
         if self.generator:
             self.generator.stop()
         logger.info(f"⏹️  Stopped worker for {self.timeframe}")
+
+    def restart_if_needed(self, min_uptime_seconds: float = 60, max_backoff_seconds: float = 300) -> bool:
+        """
+        Restart this worker if its thread has died. Previously the monitor
+        loop only logged "restarting..." without ever actually restarting
+        it — a dead worker (e.g. a data feed hiccup) stayed dead until a
+        full manual redeploy, while /health kept reporting healthy since it
+        only checks the separate API process.
+
+        Uses exponential backoff so a persistently broken feed doesn't
+        hammer the upstream API (or spam logs) every monitor tick: a worker
+        that ran for at least `min_uptime_seconds` before dying is treated
+        as a fresh failure (backoff resets to 10s); one that keeps dying
+        immediately backs off further, capped at `max_backoff_seconds`.
+        """
+        if self.is_running:
+            return False
+
+        now = time.monotonic()
+        if self.next_restart_allowed_at is not None and now < self.next_restart_allowed_at:
+            return False
+
+        if self.last_start_time is not None and (now - self.last_start_time) >= min_uptime_seconds:
+            self.restart_backoff_seconds = 10
+        else:
+            self.restart_backoff_seconds = min(self.restart_backoff_seconds * 2, max_backoff_seconds)
+
+        self.next_restart_allowed_at = now + self.restart_backoff_seconds
+        logger.warning(
+            f"⚠️  Worker {self.timeframe} has stopped, restarting "
+            f"(backoff if it fails again: {self.restart_backoff_seconds}s)..."
+        )
+        self.start()
+        return True
 
     def _run(self):
         """Main worker loop."""
@@ -363,11 +401,10 @@ class MultiTimeframeService:
                 self._send_weekly_report()
                 last_report_time = datetime.now()
 
-            # Check if any workers have died
-            for timeframe, worker in self.workers.items():
-                if not worker.is_running and self.is_running:
-                    logger.warning(f"⚠️  Worker {timeframe} has stopped, restarting...")
-                    # Could implement auto-restart here if needed
+            # Check if any workers have died, restarting them if so
+            if self.is_running:
+                for timeframe, worker in self.workers.items():
+                    worker.restart_if_needed()
 
             # Send keep-alive ping to prevent Railway sleep
             if (datetime.now() - last_keepalive_time).total_seconds() >= keepalive_interval:
