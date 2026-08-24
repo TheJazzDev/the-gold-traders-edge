@@ -18,6 +18,7 @@ from tune_strategy import (
     scale_baseline_config,
     run_isolated_backtest,
     passes_pf_gate,
+    build_search_grid,
     MIN_TRAIN_TRADES,
     MIN_TEST_TRADES,
     PRODUCTION_MIN_RR,
@@ -263,3 +264,35 @@ class TestRunIsolatedBacktest:
         # trades including force-closes).
         resolved = [t for t in result.trades if t.status in (TradeStatus.CLOSED_TP, TradeStatus.CLOSED_SL)]
         assert len(resolved) == trades
+
+
+class TestBuildSearchGrid:
+    """Regression coverage: the candle-count search neighborhood is now
+    expressed as multiplicative factors around the (already-scaled)
+    baseline value rather than hardcoded absolute candle counts, so it
+    generalizes to any timeframe. For 1H this must reproduce the original
+    hand-picked SEARCH_GRID exactly."""
+
+    EXPECTED_1H_GRID = {
+        'fib_tolerance': [0.010, 0.015, 0.020],
+        'swing_lookback': [14, 20, 28],
+        'trend_lookback': [140, 200, 260],
+        'atr_period': [40, 56, 72],
+        'default_rr_ratio': [1.5, 2.0, 2.5],
+    }
+
+    def test_reproduces_the_original_1h_grid_exactly(self):
+        grid = build_search_grid(BASE_1H_CONFIG)
+        assert grid == self.EXPECTED_1H_GRID
+
+    def test_ratio_param_grid_is_timeframe_independent(self):
+        base_15m = scale_baseline_config(GoldStrategy.DEFAULT_CONFIG, from_minutes=240, to_minutes=15)
+        grid = build_search_grid(base_15m)
+        assert grid['fib_tolerance'] == [0.010, 0.015, 0.020]
+        assert grid['default_rr_ratio'] == [1.5, 2.0, 2.5]
+
+    def test_candle_count_grid_scales_with_the_baseline(self):
+        base_15m = scale_baseline_config(GoldStrategy.DEFAULT_CONFIG, from_minutes=240, to_minutes=15)
+        grid = build_search_grid(base_15m)
+        # swing_lookback baseline at 15m = 5*16 = 80; factors [0.7, 1.0, 1.4]
+        assert grid['swing_lookback'] == sorted({round(80 * f) for f in (0.7, 1.0, 1.4)})

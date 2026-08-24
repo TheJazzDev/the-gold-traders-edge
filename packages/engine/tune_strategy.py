@@ -87,13 +87,33 @@ def scale_baseline_config(base_config, from_minutes, to_minutes):
 # exactly (see TestScaleBaselineConfig.test_reproduces_the_original_1h_baseline_exactly).
 BASE_1H_CONFIG = scale_baseline_config(GoldStrategy.DEFAULT_CONFIG, from_minutes=240, to_minutes=60)
 
-SEARCH_GRID = {
+# Candle-count params' search neighborhood is multiplicative factors around
+# that timeframe's scaled baseline value, not absolute candle counts — this
+# reproduces the original hand-picked 1H grid exactly (see
+# TestBuildSearchGrid.test_reproduces_the_original_1h_grid_exactly) while
+# generalizing to any timeframe.
+CANDLE_COUNT_GRID_FACTORS = {
+    'swing_lookback': [0.7, 1.0, 1.4],
+    'trend_lookback': [0.7, 1.0, 1.3],
+    'atr_period': [40 / 56, 1.0, 72 / 56],
+}
+
+# Ratio/percentage params are timeframe-independent — same absolute
+# candidates regardless of timeframe.
+RATIO_PARAM_GRID = {
     'fib_tolerance': [0.010, 0.015, 0.020],
-    'swing_lookback': [14, 20, 28],
-    'trend_lookback': [140, 200, 260],
-    'atr_period': [40, 56, 72],
     'default_rr_ratio': [1.5, 2.0, 2.5],
 }
+
+
+def build_search_grid(base_config):
+    """Combine the candle-count factor grid (scaled off base_config's
+    already-timeframe-scaled values) with the timeframe-independent ratio
+    param grid."""
+    grid = dict(RATIO_PARAM_GRID)
+    for param, factors in CANDLE_COUNT_GRID_FACTORS.items():
+        grid[param] = sorted({round(base_config[param] * f) for f in factors})
+    return grid
 
 MIN_TRAIN_TRADES = 15
 MIN_TEST_TRADES = 5
@@ -178,14 +198,14 @@ def run_combined_backtest(df, rule_names, config):
     return engine.run(df, strategy_func, max_open_trades=1)
 
 
-def tune_rule(train_df, rule_name):
+def tune_rule(train_df, rule_name, base_config, search_grid):
     """One-pass coordinate search: vary one parameter at a time from the baseline."""
-    current = dict(BASE_1H_CONFIG)
+    current = dict(base_config)
     best_pf, best_trades, _ = run_isolated_backtest(train_df, rule_name, current)
     if best_trades < MIN_TRAIN_TRADES:
         best_pf = 0.0
 
-    for param, values in SEARCH_GRID.items():
+    for param, values in search_grid.items():
         best_value_for_param = current[param]
         best_pf_for_param = best_pf
         for value in values:
