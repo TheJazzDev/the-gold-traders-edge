@@ -3,12 +3,78 @@ import sys
 from pathlib import Path
 import logging
 
+import pandas as pd
 import pytest
 
 sys.path.insert(0, str(Path(__file__).parent.parent / 'src'))
 
 from signals.gold_strategy import GoldStrategy
 from signals.realtime_generator import RealtimeSignalGenerator, SignalValidator
+from backtesting.engine import Signal as StrategySignal, TradeDirection
+
+
+class TestComputeRiskReward:
+    """Regression coverage: this is the risk/reward gate tune_strategy.py's
+    _production_valid_strategy_func also uses, so tuning and production score
+    the same trade population."""
+
+    def test_long_with_positive_risk_and_reward(self):
+        signal = StrategySignal(
+            time=pd.Timestamp('2026-01-01', tz='UTC'), direction=TradeDirection.LONG,
+            entry_price=2000.0, stop_loss=1990.0, take_profit=2020.0,
+            signal_name='test',
+        )
+        risk_pips, reward_pips, rr = SignalValidator.compute_risk_reward(signal)
+        assert risk_pips == pytest.approx(100.0)
+        assert reward_pips == pytest.approx(200.0)
+        assert rr == pytest.approx(2.0)
+
+    def test_short_with_positive_risk_and_reward(self):
+        signal = StrategySignal(
+            time=pd.Timestamp('2026-01-01', tz='UTC'), direction=TradeDirection.SHORT,
+            entry_price=2000.0, stop_loss=2010.0, take_profit=1980.0,
+            signal_name='test',
+        )
+        risk_pips, reward_pips, rr = SignalValidator.compute_risk_reward(signal)
+        assert risk_pips == pytest.approx(100.0)
+        assert reward_pips == pytest.approx(200.0)
+        assert rr == pytest.approx(2.0)
+
+    def test_long_with_stop_above_entry_is_rejected(self):
+        signal = StrategySignal(
+            time=pd.Timestamp('2026-01-01', tz='UTC'), direction=TradeDirection.LONG,
+            entry_price=2000.0, stop_loss=2010.0, take_profit=1980.0,
+            signal_name='test',
+        )
+        assert SignalValidator.compute_risk_reward(signal) is None
+
+    def test_long_with_take_profit_below_entry_is_rejected(self):
+        signal = StrategySignal(
+            time=pd.Timestamp('2026-01-01', tz='UTC'), direction=TradeDirection.LONG,
+            entry_price=2000.0, stop_loss=1990.0, take_profit=1995.0 - 20,
+            signal_name='test',
+        )
+        assert SignalValidator.compute_risk_reward(signal) is None
+
+
+class TestMeetsMinRr:
+    """Regression coverage for the fix: reward/risk for an RR-configured
+    trade often lands a few ULPs below the intended ratio due to
+    floating-point cancellation (e.g. 1.4999999999999998 for a configured
+    1.5). A strict `<` comparison silently rejected ~27% of trades at a
+    round-number RR target for no economic reason."""
+
+    def test_exact_ratio_passes(self):
+        assert SignalValidator.meets_min_rr(1.5, 1.5) is True
+
+    def test_ratio_a_few_ulps_below_target_still_passes(self):
+        assert SignalValidator.meets_min_rr(1.4999999999999998, 1.5) is True
+
+    def test_genuinely_below_target_fails(self):
+        assert SignalValidator.meets_min_rr(1.4, 1.5) is False
+
+    def test_ratio_above_target_passes(self):
+        assert SignalValidator.meets_min_rr(2.0, 1.5) is True
 
 
 class FakeDataFeed:

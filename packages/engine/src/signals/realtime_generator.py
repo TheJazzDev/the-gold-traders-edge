@@ -112,6 +112,14 @@ class SignalValidator:
     - No duplicate signals (same direction within 4 hours)
     """
 
+    # `reward/risk` for an RR-configured trade often lands a few ULPs below
+    # the intended ratio (e.g. 1.4999999999999998 for a configured 1.5) due
+    # to floating-point cancellation in (take_profit - entry_price). A
+    # strict `<` comparison against min_rr_ratio would silently reject a
+    # large fraction of trades at a round-number RR target for no economic
+    # reason (measured: ~27% of a 1.5-configured rule's trades).
+    RR_TOLERANCE = 1e-9
+
     def __init__(
         self,
         min_rr_ratio: float = 1.5,
@@ -122,6 +130,32 @@ class SignalValidator:
         self.max_entry_deviation = max_entry_deviation
         self.duplicate_window_hours = duplicate_window_hours
         self.recent_signals: List[ValidatedSignal] = []
+
+    @classmethod
+    def meets_min_rr(cls, rr_ratio: float, min_rr_ratio: float) -> bool:
+        """Floating-point-safe RR comparison — see RR_TOLERANCE above."""
+        return rr_ratio >= min_rr_ratio - cls.RR_TOLERANCE
+
+    @staticmethod
+    def compute_risk_reward(signal: StrategySignal) -> Optional[tuple]:
+        """
+        Pure risk/reward calculation, shared with the tuning/backtesting
+        pipeline (tune_strategy.py) so it scores the same trade population
+        this validator would actually let through to production.
+
+        Returns (risk_pips, reward_pips, rr_ratio), or None if the stop loss
+        or take profit sits on the wrong side of entry.
+        """
+        if signal.direction == TradeDirection.LONG:
+            risk_pips = (signal.entry_price - signal.stop_loss) * 10
+            reward_pips = (signal.take_profit - signal.entry_price) * 10
+        else:
+            risk_pips = (signal.stop_loss - signal.entry_price) * 10
+            reward_pips = (signal.entry_price - signal.take_profit) * 10
+
+        if risk_pips <= 0 or reward_pips <= 0:
+            return None
+        return risk_pips, reward_pips, reward_pips / risk_pips
 
     def validate(
         self,
@@ -150,25 +184,17 @@ class SignalValidator:
         # Calculate risk metrics
         direction_str = "LONG" if signal.direction == TradeDirection.LONG else "SHORT"
 
-        if signal.direction == TradeDirection.LONG:
-            risk_pips = (signal.entry_price - signal.stop_loss) * 10
-            reward_pips = (signal.take_profit - signal.entry_price) * 10
-        else:
-            risk_pips = (signal.stop_loss - signal.entry_price) * 10
-            reward_pips = (signal.entry_price - signal.take_profit) * 10
-
-        # Validate risk metrics
-        if risk_pips <= 0:
-            logger.warning(f"Invalid risk: {risk_pips:.2f} pips. Stop loss in wrong direction.")
+        risk_reward = self.compute_risk_reward(signal)
+        if risk_reward is None:
+            logger.warning(
+                f"Invalid risk/reward: stop loss or take profit on the wrong "
+                f"side of entry {signal.entry_price} (SL={signal.stop_loss}, "
+                f"TP={signal.take_profit})."
+            )
             return None
+        risk_pips, reward_pips, rr_ratio = risk_reward
 
-        if reward_pips <= 0:
-            logger.warning(f"Invalid reward: {reward_pips:.2f} pips. Take profit in wrong direction.")
-            return None
-
-        rr_ratio = reward_pips / risk_pips
-
-        if rr_ratio < self.min_rr_ratio:
+        if not self.meets_min_rr(rr_ratio, self.min_rr_ratio):
             logger.warning(
                 f"Poor R:R ratio: 1:{rr_ratio:.2f} (minimum: 1:{self.min_rr_ratio}). "
                 f"Rejecting signal."
