@@ -6,7 +6,10 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from fetch_metaapi_history import validate_candles, candles_to_dataframe
+import asyncio
+from unittest.mock import AsyncMock
+
+from fetch_metaapi_history import validate_candles, candles_to_dataframe, fetch_all_candles
 
 
 def _candle(time, open_, high, low, close, volume=100):
@@ -58,3 +61,35 @@ class TestCandlesToDataframe:
         assert list(df.columns) == ['open', 'high', 'low', 'close', 'volume']
         assert df.index.name == 'Datetime'
         assert len(df) == 0
+
+
+class TestFetchAllCandles:
+    """No real MetaAPI network calls — `account` is an AsyncMock standing in
+    for the SDK's MetatraderAccount, whose get_historical_candles() is a
+    coroutine per the SDK's documented usage
+    (await account.get_historical_candles(symbol=..., timeframe=..., start_time=..., limit=...))."""
+
+    def test_pages_backward_until_a_short_page(self):
+        account = AsyncMock()
+        full_page = [
+            _candle(f'2026-01-01T{h:02d}:00:00.000Z', 2000.0, 2005.0, 1998.0, 2002.0)
+            for h in range(23, -1, -1)  # 24 candles — exactly one full page
+        ]
+        short_page = full_page[:5]
+        account.get_historical_candles.side_effect = [full_page, short_page, []]
+
+        candles = asyncio.run(fetch_all_candles(account, 'XAUUSD', '15m', page_limit=24))
+
+        assert len(candles) == 24 + 5
+        # stops after the short page (< page_limit signals end of history) —
+        # never makes the third call
+        assert account.get_historical_candles.call_count == 2
+
+    def test_stops_immediately_on_empty_first_page(self):
+        account = AsyncMock()
+        account.get_historical_candles.side_effect = [[]]
+
+        candles = asyncio.run(fetch_all_candles(account, 'XAUUSD', '15m', page_limit=1000))
+
+        assert candles == []
+        assert account.get_historical_candles.call_count == 1

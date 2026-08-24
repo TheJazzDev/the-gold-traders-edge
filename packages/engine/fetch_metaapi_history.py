@@ -61,7 +61,82 @@ def candles_to_dataframe(candles):
     return df
 
 
+async def fetch_all_candles(account, symbol, timeframe, page_limit=1000):
+    """
+    Page backward from now via account.get_historical_candles(start_time=...),
+    which returns candles strictly before start_time, until the API returns
+    an empty page or a page shorter than page_limit (both signal we've hit
+    the start of available history). Returns a flat list of raw candle
+    dicts — still needs validate_candles()/candles_to_dataframe().
+    """
+    all_candles = []
+    cursor = datetime.now(timezone.utc)
+    while True:
+        page = await account.get_historical_candles(
+            symbol=symbol, timeframe=timeframe, start_time=cursor, limit=page_limit
+        )
+        if not page:
+            break
+        all_candles.extend(page)
+        if len(page) < page_limit:
+            break
+        cursor = min(pd.to_datetime(c['time'], utc=True) for c in page).to_pydatetime()
+    return all_candles
+
+
+async def main_async(args):
+    from metaapi_cloud_sdk import MetaApi
+
+    token = os.getenv('METAAPI_TOKEN')
+    account_id = os.getenv('METAAPI_ACCOUNT_ID')
+    if not token or not account_id:
+        print("METAAPI_TOKEN and METAAPI_ACCOUNT_ID must be set (see packages/engine/.env)")
+        sys.exit(1)
+
+    api = MetaApi(token)
+    account = api.metatrader_account_api.get_account(account_id)
+    await account.deploy()
+    await account.wait_connected()
+
+    candles = await fetch_all_candles(account, args.symbol, args.timeframe)
+    if not candles:
+        print("No historical candles returned — this account/broker may not "
+              "retain history for this symbol/timeframe.")
+        sys.exit(1)
+
+    times = pd.to_datetime([c['time'] for c in candles], utc=True)
+    days = (times.max() - times.min()).total_seconds() / 86400
+    print(f"Fetched {len(candles)} raw candles: {times.min()} to {times.max()} ({days:.1f} days)")
+
+    if args.discover:
+        print("(--discover set: not validating/writing a CSV)")
+        return
+
+    valid, dropped = validate_candles(candles)
+    if dropped:
+        print(f"Dropped {dropped} candles failing OHLC validation")
+    df = candles_to_dataframe(valid)
+    print(f"After validation/dedup: {len(df)} candles, {df.index.min()} to {df.index.max()}")
+
+    output_path = Path(args.output)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    df.to_csv(output_path)
+    print(f"Wrote {output_path}")
+
+
+def main():
+    parser = argparse.ArgumentParser(description='Fetch XAUUSD historical candles from MetaAPI (dev-only)')
+    parser.add_argument('--timeframe', required=True, help='MetaAPI timeframe string, e.g. "15m"')
+    parser.add_argument('--symbol', default='XAUUSD')
+    parser.add_argument('--discover', action='store_true',
+                         help='Report available history depth and exit without writing a CSV')
+    parser.add_argument('--output', type=str,
+                         help='Output CSV path (required unless --discover)')
+    args = parser.parse_args()
+    if not args.discover and not args.output:
+        parser.error('--output is required unless --discover is set')
+    asyncio.run(main_async(args))
+
+
 if __name__ == '__main__':
-    print("This script isn't fully wired up yet — see Task 6 of "
-          "docs/superpowers/plans/2026-08-24-15m-strategy-tuning.md")
-    sys.exit(1)
+    main()
