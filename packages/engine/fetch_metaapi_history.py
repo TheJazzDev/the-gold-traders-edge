@@ -94,7 +94,7 @@ async def main_async(args):
         sys.exit(1)
 
     api = MetaApi(token)
-    account = api.metatrader_account_api.get_account(account_id)
+    account = await api.metatrader_account_api.get_account(account_id)
     await account.deploy()
     await account.wait_connected()
 
