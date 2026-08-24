@@ -1,6 +1,6 @@
 """Tests for fetch_metaapi_history.py's pure data-transformation functions.
-No real MetaAPI network calls in this file — see test_fetch_metaapi_history.py's
-TestFetchAllCandles for the mocked-client pagination tests."""
+No real MetaAPI network calls in this file — TestFetchAllCandles below uses
+a mocked client for the pagination tests."""
 import sys
 from pathlib import Path
 

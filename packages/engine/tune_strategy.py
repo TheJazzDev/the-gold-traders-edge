@@ -1,17 +1,23 @@
 #!/usr/bin/env python3
 """
-Grid-search tuning and train/test validation of GoldStrategy for the 1H
+Grid-search tuning and train/test validation of GoldStrategy for any
 timeframe, using real historical data.
 
-The 4H-tuned defaults were carried over unchanged when 1H support was
-added, and were never re-validated on 1H's own price behavior. This script:
+The 4H-tuned defaults were carried over unchanged when other timeframes
+were added, and were never re-validated on those timeframes' own price
+behavior. This script generalizes the original 1H-only approach (same
+train/test split, coordinate search, shared-config gating, and expiry
+calculation) to any timeframe by scaling the 4H baseline config and search
+grid to the target timeframe's own candle duration:
 
-1. Splits real 1H OHLCV data chronologically 70/30 (train/test).
-2. For each of the 5 rules, independently: starts from 1H-equivalent
-   rescaled defaults (4x the 4H candle-count lookbacks, since 1H candles
-   are 1/4 the duration of 4H candles), then does a one-pass coordinate
-   search (vary one parameter at a time, keep whichever value improves
-   train-slice profit factor) around that starting point.
+1. Splits the real OHLCV data for the target timeframe chronologically
+   70/30 (train/test).
+2. For each of the 5 rules, independently: starts from a timeframe-scaled
+   baseline (the 4H candle-count lookbacks rescaled by 240/target_minutes,
+   since a finer timeframe's candles cover less real time each), then does
+   a one-pass coordinate search (vary one parameter at a time, keep
+   whichever value improves train-slice profit factor) around that
+   starting point.
 3. Builds one shared config by taking the per-parameter median across all
    rules that passed a training-data profit-factor bar, then re-validates
    EVERY candidate rule against that final shared config on the held-out
@@ -22,8 +28,13 @@ added, and were never re-validated on 1H's own price behavior. This script:
 4. Computes an expiry window from the 95th percentile of trade durations
    (in hours) across all enabled rules' test-slice trades.
 
+Note: only 1h (byte-identical regression against the committed
+tuned_configs/1h.json) and 15m (a real tuning run) have actually been
+validated end-to-end. The other timeframes (5m, 30m, 4h, 1d) are supported
+by the scaling model but have not yet been run — see TIMEFRAME_MINUTES.
+
 Usage:
-    python tune_strategy.py --data data/processed/xauusd_1h_2024_2026.csv
+    python tune_strategy.py --data data/processed/xauusd_1h_2024_2026.csv --timeframe 1h
 """
 import sys
 import json
@@ -79,7 +90,9 @@ def scale_baseline_config(base_config, from_minutes, to_minutes):
     scaled = {}
     for param in TUNABLE_PARAMS:
         value = base_config[param]
-        scaled[param] = round(value * scale) if param in CANDLE_COUNT_PARAMS else value
+        # Floor candle-count params at 2 candles so scaling up to a coarser
+        # timeframe (e.g. 4H -> 1D) can never collapse a lookback to 0 or 1.
+        scaled[param] = max(2, round(value * scale)) if param in CANDLE_COUNT_PARAMS else value
     return scaled
 
 
@@ -120,19 +133,30 @@ def build_search_grid(base_config):
     grid = {'fib_tolerance': RATIO_PARAM_GRID['fib_tolerance']}
     for param, factors in CANDLE_COUNT_GRID_FACTORS.items():
         grid[param] = sorted({round(base_config[param] * f) for f in factors})
+        if len(grid[param]) < 2:
+            print(f"⚠️  Search grid for '{param}' collapsed to a single value {grid[param]} — "
+                  f"this parameter's coordinate search is a no-op for this timeframe.")
     grid['default_rr_ratio'] = RATIO_PARAM_GRID['default_rr_ratio']
     return grid
 
 MIN_TRAIN_TRADES = 15
 MIN_TEST_TRADES = 5
 
+# All six timeframes are selectable, but only 1h and 15m have been
+# validated end-to-end (see module docstring). The others are supported by
+# the scaling model in scale_baseline_config/build_search_grid but not yet
+# run — watch for the search-grid-collapsed warning above on those.
 TIMEFRAME_MINUTES = {
     '5m': 5, '15m': 15, '30m': 30, '1h': 60, '4h': 240, '1d': 1440,
 }
 
 
 def default_output_path(timeframe):
-    return f'tuned_configs/{timeframe}.json'
+    # Anchored to this script's own location (not cwd), matching how
+    # run_multi_timeframe_service.py resolves tuned configs via
+    # Path(__file__).parent — otherwise running this from another directory
+    # would silently write configs the live service never looks for.
+    return str(Path(__file__).parent / 'tuned_configs' / f'{timeframe}.json')
 
 
 def split_train_test(df, train_frac=0.7):

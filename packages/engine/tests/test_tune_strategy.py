@@ -305,8 +305,11 @@ class TestBuildSearchGrid:
 
 class TestTimeframeDefaults:
     def test_default_output_path_uses_timeframe(self):
-        assert default_output_path('15m') == 'tuned_configs/15m.json'
-        assert default_output_path('1h') == 'tuned_configs/1h.json'
+        assert default_output_path('15m').endswith('tuned_configs/15m.json')
+        assert default_output_path('1h').endswith('tuned_configs/1h.json')
+        # Anchored to the script's own location, not cwd.
+        assert Path(default_output_path('15m')).is_absolute()
+        assert Path(default_output_path('1h')).is_absolute()
 
     def test_timeframe_minutes_covers_all_supported_timeframes(self):
         assert TIMEFRAME_MINUTES == {'5m': 5, '15m': 15, '30m': 30, '1h': 60, '4h': 240, '1d': 1440}

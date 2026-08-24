@@ -11,7 +11,8 @@ Requires `pip install metaapi-cloud-sdk` (NOT part of packages/engine/requiremen
 which stays on Yahoo Finance per the Task 14 deployment decision).
 
 Usage:
-    # Check how much history is available without downloading/writing anything:
+    # Fetch all available history and report its date range/count, without
+    # validating or writing a CSV:
     python fetch_metaapi_history.py --timeframe 15m --discover
 
     # Fetch the full available range:
@@ -25,6 +26,9 @@ from pathlib import Path
 from datetime import datetime, timezone
 
 import pandas as pd
+from dotenv import load_dotenv
+
+load_dotenv()
 
 
 def validate_candles(candles):
@@ -68,6 +72,19 @@ async def fetch_all_candles(account, symbol, timeframe, page_limit=1000):
     an empty page or a page shorter than page_limit (both signal we've hit
     the start of available history). Returns a flat list of raw candle
     dicts — still needs validate_candles()/candles_to_dataframe().
+
+    Guards against a frozen or non-advancing cursor (e.g. if the SDK ever
+    returned candles inclusive of start_time) to avoid an unbounded loop
+    against a metered external API.
+
+    Note: verified against MetaAPI's real API for connectivity and error
+    handling (a live run against an account with no history got a real,
+    structured NotFoundException, confirming the async wiring and single-call
+    behavior are correct) — but the multi-page pagination loop itself has
+    not yet been exercised against a real multi-page response, since no
+    MetaAPI account with actual history has been available to test against.
+    Multi-page behavior is currently only covered by mocked tests (see
+    tests/test_fetch_metaapi_history.py, TestFetchAllCandles).
     """
     all_candles = []
     cursor = datetime.now(timezone.utc)
@@ -80,7 +97,12 @@ async def fetch_all_candles(account, symbol, timeframe, page_limit=1000):
         all_candles.extend(page)
         if len(page) < page_limit:
             break
-        cursor = min(pd.to_datetime(c['time'], utc=True) for c in page).to_pydatetime()
+        new_cursor = min(pd.to_datetime(c['time'], utc=True) for c in page).to_pydatetime()
+        if new_cursor >= cursor:
+            print(f"⚠️  Cursor did not advance backward ({new_cursor} >= {cursor}) — "
+                  f"stopping pagination early to avoid an infinite loop.")
+            break
+        cursor = new_cursor
     return all_candles
 
 
@@ -129,7 +151,8 @@ def main():
     parser.add_argument('--timeframe', required=True, help='MetaAPI timeframe string, e.g. "15m"')
     parser.add_argument('--symbol', default='XAUUSD')
     parser.add_argument('--discover', action='store_true',
-                         help='Report available history depth and exit without writing a CSV')
+                         help='Fetch all available history and report its date range/count, '
+                              'without validating or writing a CSV')
     parser.add_argument('--output', type=str,
                          help='Output CSV path (required unless --discover)')
     args = parser.parse_args()
