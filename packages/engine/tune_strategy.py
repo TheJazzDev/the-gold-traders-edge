@@ -27,15 +27,23 @@ Usage:
 """
 import sys
 import json
+import math
 import argparse
+import statistics
 from pathlib import Path
 from datetime import datetime, timezone
 
 sys.path.insert(0, str(Path(__file__).parent / 'src'))
 
 from data.loader import GoldDataLoader
-from signals.gold_strategy import GoldStrategy, create_strategy_function
+from signals.gold_strategy import GoldStrategy
+from signals.realtime_generator import SignalValidator
 from backtesting.engine import BacktestEngine, TradeStatus
+
+# Matches SignalValidator(min_rr_ratio=1.5) in run_multi_timeframe_service.py.
+# Tuning must score the same trade population production would actually
+# publish, not whatever GoldStrategy raw-emits before that filter runs.
+PRODUCTION_MIN_RR = 1.5
 
 RULES = [
     'momentum_equilibrium',
@@ -82,17 +90,66 @@ def split_train_test(df, train_frac=0.7):
     return df.iloc[:split_idx], df.iloc[split_idx:]
 
 
+def _production_valid_strategy_func(strategy):
+    """
+    Wraps GoldStrategy.evaluate so the backtest only ever sees signals
+    SignalValidator would actually publish to production (risk>0, reward>0,
+    rr >= PRODUCTION_MIN_RR). Without this, tuning selects rules and configs
+    against a trade population production can never place.
+    """
+    def strategy_func(df, idx):
+        signal = strategy.evaluate(df, idx)
+        if signal is None:
+            return None
+        risk_reward = SignalValidator.compute_risk_reward(signal)
+        if risk_reward is None or not SignalValidator.meets_min_rr(risk_reward[2], PRODUCTION_MIN_RR):
+            return None
+        return signal
+    return strategy_func
+
+
+def _resolved_stats(result):
+    """
+    profit_factor/total_trades/win_rate/net_profit_pct computed over
+    RESOLVED (CLOSED_TP/CLOSED_SL) trades only — excludes CLOSED_MANUAL
+    force-closes (an open position marked to market at the end of the data
+    slice). A single such trade at the tail of a slice can flip a rule's
+    PF gate from FAIL to PASS on an unresolved mark-to-market credit rather
+    than a real win; BacktestResult.calculate_metrics() doesn't make this
+    distinction, so it's recomputed here instead of trusting
+    result.profit_factor/result.total_trades directly.
+    """
+    resolved = [t for t in result.trades if t.status in (TradeStatus.CLOSED_TP, TradeStatus.CLOSED_SL)]
+    total_trades = len(resolved)
+    if total_trades == 0:
+        return {'profit_factor': 0.0, 'total_trades': 0, 'win_rate': 0.0, 'net_profit_pct': 0.0}
+
+    winning = [t for t in resolved if t.pnl > 0]
+    losing = [t for t in resolved if t.pnl <= 0]
+    total_profit = sum(t.pnl for t in winning) if winning else 0
+    total_loss = abs(sum(t.pnl for t in losing)) if losing else 0
+
+    return {
+        'profit_factor': total_profit / total_loss if total_loss > 0 else float('inf'),
+        'total_trades': total_trades,
+        'win_rate': len(winning) / total_trades * 100,
+        'net_profit_pct': sum(t.pnl for t in resolved) / result.initial_balance * 100,
+    }
+
+
 def run_isolated_backtest(df, rule_name, config):
-    """Run a backtest with only `rule_name` enabled. Returns (profit_factor, total_trades, result)."""
+    """Run a backtest with only `rule_name` enabled. Returns (profit_factor, total_trades, result),
+    computed over resolved trades only — see _resolved_stats."""
     strategy = GoldStrategy(config=config)
     for name in strategy.rules_enabled:
         strategy.rules_enabled[name] = False
     strategy.rules_enabled[rule_name] = True
 
-    strategy_func = create_strategy_function(strategy)
+    strategy_func = _production_valid_strategy_func(strategy)
     engine = BacktestEngine(initial_balance=10000, position_size_pct=2.0)
     result = engine.run(df, strategy_func, max_open_trades=1)
-    return result.profit_factor, result.total_trades, result
+    stats = _resolved_stats(result)
+    return stats['profit_factor'], stats['total_trades'], result
 
 
 def run_combined_backtest(df, rule_names, config):
@@ -101,7 +158,7 @@ def run_combined_backtest(df, rule_names, config):
     for name in strategy.rules_enabled:
         strategy.rules_enabled[name] = name in rule_names
 
-    strategy_func = create_strategy_function(strategy)
+    strategy_func = _production_valid_strategy_func(strategy)
     engine = BacktestEngine(initial_balance=10000, position_size_pct=2.0)
     return engine.run(df, strategy_func, max_open_trades=1)
 
@@ -130,25 +187,40 @@ def tune_rule(train_df, rule_name):
 
 
 def validate_rule(df, rule_name, config):
-    """Run `config` isolated to `rule_name` on `df`, returning (stats, trade_durations_hours)."""
-    pf, trades, result = run_isolated_backtest(df, rule_name, config)
-    closed = [t for t in result.trades if t.status != TradeStatus.OPEN]
+    """Run `config` isolated to `rule_name` on `df`, returning (stats, trade_durations_hours).
+    Both are computed over resolved (CLOSED_TP/CLOSED_SL) trades only — a force-closed trade's
+    duration is truncated by the data slice ending, not by the trade actually resolving, so it
+    shouldn't calibrate the expiry window either."""
+    _, _, result = run_isolated_backtest(df, rule_name, config)
+    resolved = [t for t in result.trades if t.status in (TradeStatus.CLOSED_TP, TradeStatus.CLOSED_SL)]
     durations_hours = [
         (t.exit_time - t.entry_time).total_seconds() / 3600
-        for t in closed if t.exit_time is not None
+        for t in resolved if t.exit_time is not None
     ]
-    stats = {
-        'profit_factor': pf,
-        'total_trades': trades,
-        'win_rate': result.win_rate,
-        'net_profit_pct': ((result.final_balance / result.initial_balance) - 1) * 100,
-    }
+    stats = _resolved_stats(result)
     return stats, durations_hours
 
 
 def passes_pf_gate(stats, min_trades):
     """A rule 'passes' a profitability gate if PF > 1.0 with enough trades to trust it."""
     return stats['profit_factor'] > 1.0 and stats['total_trades'] >= min_trades
+
+
+def json_safe(value):
+    """
+    Recursively replace non-finite floats (e.g. an infinite profit factor
+    from a rule with zero losing trades) with a finite sentinel, so the
+    output is valid RFC-8259 JSON. Python's json.dump happily writes a bare
+    `Infinity` token, which Python's own json.load tolerates but `JSON.parse`,
+    `jq`, and most other parsers reject outright.
+    """
+    if isinstance(value, float) and not math.isfinite(value):
+        return math.copysign(1e9, value)
+    if isinstance(value, dict):
+        return {k: json_safe(v) for k, v in value.items()}
+    if isinstance(value, list):
+        return [json_safe(v) for v in value]
+    return value
 
 
 def percentile(values, pct):
@@ -214,8 +286,11 @@ def main():
     if candidate_rules:
         final_config = {}
         for param in BASE_1H_CONFIG:
-            values = sorted(tuned_config_by_rule[r][param] for r in candidate_rules)
-            final_config[param] = values[len(values) // 2]  # median
+            values = [tuned_config_by_rule[r][param] for r in candidate_rules]
+            # median_low (not an interpolated median) so an even-length list
+            # always resolves to a value some candidate rule actually chose,
+            # rather than a number in between that nothing was tuned around.
+            final_config[param] = statistics.median_low(values)
     else:
         final_config = dict(BASE_1H_CONFIG)
 
@@ -252,18 +327,13 @@ def main():
         'expiry_hours': expiry_hours,
         'per_rule_validation': validation,
         'final_shared_config_validation': final_validation,
-        'combined_test_slice_result': {
-            'total_trades': combined_result.total_trades,
-            'win_rate': combined_result.win_rate,
-            'profit_factor': combined_result.profit_factor,
-            'net_profit_pct': ((combined_result.final_balance / combined_result.initial_balance) - 1) * 100,
-        } if combined_result else None,
+        'combined_test_slice_result': _resolved_stats(combined_result) if combined_result else None,
     }
 
     output_path = Path(args.output)
     output_path.parent.mkdir(parents=True, exist_ok=True)
     with open(output_path, 'w') as f:
-        json.dump(output, f, indent=2, default=str)
+        json.dump(json_safe(output), f, indent=2, default=str, allow_nan=False)
 
     print(f"\n✅ Wrote {output_path}")
     print(f"Enabled rules: {enabled_rules}")
