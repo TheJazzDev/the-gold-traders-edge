@@ -2321,20 +2321,30 @@ This task cannot be executed by an agent — it requires access to the user's Ra
 
 **Files:** none (environment configuration only)
 
-- [ ] **Step 1: Confirm the Postgres DATABASE_URL Railway env var**
+- [x] **Step 1: Confirm the Postgres DATABASE_URL Railway env var**
 
 In the Railway project's service running `run_multi_timeframe_service.py` (via `supervisord`), confirm a `DATABASE_URL` environment variable is set to the Postgres connection string, in the form `postgresql://<user>:<password>@<host>:<port>/<database>`. If the credential was rotated per Task 13, use the new password here.
 
-- [ ] **Step 2: Add Telegram environment variables**
+Actual: the project's Postgres service was entirely missing (only an orphaned, unattached `postgres-volume` remained — `serviceId: null` — likely deleted at some point, possibly during a prior password-rotation attempt). User confirmed the old data wasn't needed, so a fresh Postgres service was provisioned (`railway add --database postgres`) and `DATABASE_URL=${{Postgres.DATABASE_URL}}` set on the app service so it stays in sync automatically. The old orphaned volume was left untouched (not deleted).
+
+- [x] **Step 2: Add Telegram environment variables**
 
 Add two environment variables to the same Railway service:
 - `TELEGRAM_BOT_TOKEN` — the value currently sitting in `packages/engine/.env` locally (not deployed anywhere yet).
 - `TELEGRAM_CHAT_ID` — same source.
 
-- [ ] **Step 3: Redeploy and verify**
+Actual: both set, plus `ENABLE_TELEGRAM=true` (also present in the local `.env`).
+
+- [x] **Step 3: Redeploy and verify**
 
 Trigger a redeploy (Railway redeploys automatically on git push to the connected branch, once Tasks 1-13's commits are pushed). After it's up, check the deploy logs for the same startup sequence verified locally in Task 12 Step 7 (`Loaded tuned config from .../tuned_configs/1h.json`, `Enabled rules: [...]`, no tracebacks), and confirm a real Telegram message eventually arrives once a live 1H signal fires.
 
-- [ ] **Step 4: Report back**
+Actual: two more real problems surfaced during verification, both fixed:
+1. `supervisord.conf` runs the Python worker without `PYTHONUNBUFFERED=1`, so `print()`-based diagnostics (used throughout `realtime_feed.py`) were stuck in stdout's block buffer and never reached the logs — the real failure reason was invisible behind a generic `ConnectionError: Failed to connect to data feed`. Set `PYTHONUNBUFFERED=1` on the app service to surface real errors going forward (not yet moved into `supervisord.conf`/`Dockerfile` itself — still a Railway-env-var-only fix).
+2. Once visible, the real error was `❌ metaapi-cloud-sdk not installed` — `DATA_FEED_TYPE=metaapi` was set in the Railway env, but `metaapi-cloud-sdk` was never added to `packages/engine/requirements.txt`, so that path has likely never worked in production. User chose to switch to the Yahoo Finance feed (`DATA_FEED_TYPE=yahoo`) rather than add the MetaAPI dependency right now. Confirmed live: `✅ Connected to Yahoo Finance (GC=F)`, `🚀 REAL-TIME SIGNAL GENERATOR STARTED`, `Strategy: order_block_retest`, waiting for the next 1H candle close, no tracebacks, `/health` returns 200. Telegram delivery itself not yet confirmed (no live signal has fired since deploy) — will only be verifiable once a real 1H signal triggers.
+
+Also surfaced but **not fixed** (flagging, not blocking): `MultiTimeframeService._monitor_loop()` only logs `"Worker {timeframe} has stopped, restarting..."` when a worker's `_run()` exits — the comment right there says `# Could implement auto-restart here if needed`, but no restart is actually implemented. Since the failure is internal to the Python process (not a process crash), supervisord's `autorestart=true` doesn't help either — a worker that dies (data feed hiccup, transient exception) currently stays dead until a full manual redeploy, while `/health` keeps reporting healthy the whole time because it only checks the FastAPI process. Worth fixing before relying on this unattended for long periods.
+
+- [x] **Step 4: Report back**
 
 Once verified live, report to the user: which timeframe is running, which rules are enabled, the expiry window in hours, and remind them the weekly Telegram report will not send anything meaningful until at least one full week of signals has accumulated.
