@@ -1,0 +1,208 @@
+{
+  "generated_at": "2026-08-24T08:09:24.417146+00:00",
+  "symbol": "XAUUSD",
+  "timeframe": "1h",
+  "data_range": {
+    "start": "2024-08-25 23:00:00+00:00",
+    "end": "2026-08-21 20:00:00+00:00",
+    "train_end": "2026-01-16 11:00:00+00:00"
+  },
+  "config": {
+    "fib_tolerance": 0.015,
+    "swing_lookback": 20,
+    "swing_min_strength": 2,
+    "trend_lookback": 200,
+    "strong_momentum_threshold": 0.02,
+    "atr_period": 56,
+    "default_rr_ratio": 2.0,
+    "sl_buffer_atr": 0.3,
+    "ema_fast": 36,
+    "ema_slow": 84,
+    "rsi_period": 56,
+    "rsi_overbought": 70,
+    "rsi_oversold": 30
+  },
+  "enabled_rules": [
+    "order_block_retest"
+  ],
+  "expiry_hours": 143,
+  "per_rule_validation": {
+    "momentum_equilibrium": {
+      "train": {
+        "profit_factor": 2.5045389603627517,
+        "total_trades": 27,
+        "win_rate": 51.85185185185185,
+        "net_profit_pct": 52.2611729172463
+      },
+      "test_individually_tuned": {
+        "profit_factor": 0.9263072012556349,
+        "total_trades": 18,
+        "win_rate": 27.77777777777778,
+        "net_profit_pct": -1.8510903437630601
+      },
+      "config": {
+        "fib_tolerance": 0.01,
+        "swing_lookback": 20,
+        "swing_min_strength": 2,
+        "trend_lookback": 260,
+        "strong_momentum_threshold": 0.02,
+        "atr_period": 40,
+        "default_rr_ratio": 2.5,
+        "sl_buffer_atr": 0.3,
+        "ema_fast": 36,
+        "ema_slow": 84,
+        "rsi_period": 56,
+        "rsi_overbought": 70,
+        "rsi_oversold": 30
+      }
+    },
+    "london_session_breakout": {
+      "train": {
+        "profit_factor": 1.215460520543914,
+        "total_trades": 42,
+        "win_rate": 38.095238095238095,
+        "net_profit_pct": 10.767255890702772
+      },
+      "test_individually_tuned": {
+        "profit_factor": 0.0,
+        "total_trades": 1,
+        "win_rate": 0.0,
+        "net_profit_pct": -2.0
+      },
+      "config": {
+        "fib_tolerance": 0.015,
+        "swing_lookback": 20,
+        "swing_min_strength": 2,
+        "trend_lookback": 140,
+        "strong_momentum_threshold": 0.02,
+        "atr_period": 56,
+        "default_rr_ratio": 2.0,
+        "sl_buffer_atr": 0.3,
+        "ema_fast": 36,
+        "ema_slow": 84,
+        "rsi_period": 56,
+        "rsi_overbought": 70,
+        "rsi_oversold": 30
+      }
+    },
+    "golden_fibonacci": {
+      "train": {
+        "profit_factor": 1.4866761202016385,
+        "total_trades": 37,
+        "win_rate": 43.24324324324324,
+        "net_profit_pct": 22.540886638335586
+      },
+      "test_individually_tuned": {
+        "profit_factor": 0.0,
+        "total_trades": 1,
+        "win_rate": 0.0,
+        "net_profit_pct": -1.9999999999999998
+      },
+      "config": {
+        "fib_tolerance": 0.02,
+        "swing_lookback": 20,
+        "swing_min_strength": 2,
+        "trend_lookback": 200,
+        "strong_momentum_threshold": 0.02,
+        "atr_period": 56,
+        "default_rr_ratio": 2.0,
+        "sl_buffer_atr": 0.3,
+        "ema_fast": 36,
+        "ema_slow": 84,
+        "rsi_period": 56,
+        "rsi_overbought": 70,
+        "rsi_oversold": 30
+      }
+    },
+    "ath_retest": {
+      "train": {
+        "profit_factor": 0.712207255810726,
+        "total_trades": 336,
+        "win_rate": 22.61904761904762,
+        "net_profit_pct": -78.6613760775612
+      },
+      "test_individually_tuned": {
+        "profit_factor": 1.033896927310198,
+        "total_trades": 97,
+        "win_rate": 29.896907216494846,
+        "net_profit_pct": 4.198824629694687
+      },
+      "config": {
+        "fib_tolerance": 0.015,
+        "swing_lookback": 20,
+        "swing_min_strength": 2,
+        "trend_lookback": 200,
+        "strong_momentum_threshold": 0.02,
+        "atr_period": 40,
+        "default_rr_ratio": 2.5,
+        "sl_buffer_atr": 0.3,
+        "ema_fast": 36,
+        "ema_slow": 84,
+        "rsi_period": 56,
+        "rsi_overbought": 70,
+        "rsi_oversold": 30
+      }
+    },
+    "order_block_retest": {
+      "train": {
+        "profit_factor": 1.222540618034845,
+        "total_trades": 441,
+        "win_rate": 45.80498866213152,
+        "net_profit_pct": 213.4378798039384
+      },
+      "test_individually_tuned": {
+        "profit_factor": 1.1317621596438034,
+        "total_trades": 157,
+        "win_rate": 43.94904458598726,
+        "net_profit_pct": 29.916157062157446
+      },
+      "config": {
+        "fib_tolerance": 0.015,
+        "swing_lookback": 20,
+        "swing_min_strength": 2,
+        "trend_lookback": 260,
+        "strong_momentum_threshold": 0.02,
+        "atr_period": 72,
+        "default_rr_ratio": 1.5,
+        "sl_buffer_atr": 0.3,
+        "ema_fast": 36,
+        "ema_slow": 84,
+        "rsi_period": 56,
+        "rsi_overbought": 70,
+        "rsi_oversold": 30
+      }
+    }
+  },
+  "final_shared_config_validation": {
+    "momentum_equilibrium": {
+      "profit_factor": 0.8915568688598784,
+      "total_trades": 19,
+      "win_rate": 31.57894736842105,
+      "net_profit_pct": -2.6941345219956316
+    },
+    "london_session_breakout": {
+      "profit_factor": 0.9701010101010101,
+      "total_trades": 6,
+      "win_rate": 33.33333333333333,
+      "net_profit_pct": -0.23665981439999995
+    },
+    "golden_fibonacci": {
+      "profit_factor": 0.9679582381133082,
+      "total_trades": 21,
+      "win_rate": 33.33333333333333,
+      "net_profit_pct": -0.8258619048179452
+    },
+    "order_block_retest": {
+      "profit_factor": 1.1611578181755058,
+      "total_trades": 114,
+      "win_rate": 37.719298245614034,
+      "net_profit_pct": 28.672270381388103
+    }
+  },
+  "combined_test_slice_result": {
+    "profit_factor": 1.1611578181755058,
+    "total_trades": 114,
+    "win_rate": 37.719298245614034,
+    "net_profit_pct": 28.672270381388103
+  }
+}
