@@ -2045,23 +2045,30 @@ This task has no unit tests of its own — it executes Task 10's script against 
 - Consumes: `packages/engine/tune_strategy.py` (Task 10), `packages/engine/data/processed/xauusd_1h_2024_2026.csv` (Task 1, or whatever exact filename Task 1's Step 2 reported).
 - Produces: `packages/engine/tuned_configs/1h.json` matching the schema written by `tune_strategy.py`'s `main()`. Task 12 reads `config`, `enabled_rules`, and `expiry_hours` from this file by exact key name.
 
-- [ ] **Step 1: Dispatch the tuning execution agent**
+- [x] **Step 1: Dispatch the tuning execution agent**
 
 Use the Agent tool with `model: opus`, `effort: high`, and this prompt (fill in the exact data filename from Task 1):
 
 > Run `packages/engine/tune_strategy.py` against `packages/engine/data/processed/<exact filename from Task 1>` from the `packages/engine` directory using the venv at `packages/engine/venv` (activate it first). Report: the full stdout, the resulting `tuned_configs/1h.json` contents, and your own written assessment of overfitting risk — specifically: (a) does the train/test split look free of any leakage (test dates strictly after train dates, with no overlap), (b) is `MIN_TRAIN_TRADES`/`MIN_TEST_TRADES` being enforced correctly (a rule with too few trades in either slice should not ship enabled), (c) does the final shared-config re-validation in the script's output show any candidate rule that passed individually but failed under the shared config (if so, confirm it was correctly excluded from `enabled_rules`), and (d) anything else that looks statistically suspicious (e.g. suspiciously round numbers, a rule with very few trades but a huge profit factor).
 
-- [ ] **Step 2: Dispatch the adversarial review agent**
+- [x] **Step 2: Dispatch the adversarial review agent**
 
 Use the Agent tool with `model: opus`, `effort: high`, and this prompt (fill in the actual `tuned_configs/1h.json` produced by Step 1, pasted inline or by file path):
 
 > Independently review `packages/engine/tuned_configs/1h.json` and the script that produced it (`packages/engine/tune_strategy.py`) for correctness, without trusting the first agent's self-assessment. Specifically: (1) Re-derive the reported profit factor and trade count for at least 2 of the 5 rules from scratch by running `python tune_strategy.py --data <path> --output /tmp/reverify.json` yourself and diffing the result against the original — the numbers must match exactly (deterministic script, same input). (2) Check `split_train_test` for date-range leakage — read the function and confirm the split index truly means every train-slice timestamp is before every test-slice timestamp. (3) Check `tune_rule`'s coordinate search for lookahead bias — confirm no parameter or code path lets a rule "see" data beyond the current candle index during `BacktestEngine.run()` (this class was already validated for 4H, so this is mainly confirming nothing new was introduced here). (4) Check whether `final_config`'s median-based construction produced a config no individual rule was actually tuned around (e.g., if it picks a `trend_lookback` no candidate rule tested), and if so, whether the final shared-config re-validation step still shows real profitability for every rule in `enabled_rules` — this is the step that should catch that problem, confirm it does. Report PASS/FAIL with specifics for each of these four checks, and flag anything else suspicious.
 
-- [ ] **Step 3: Resolve any disagreement**
+- [x] **Step 3: Resolve any disagreement**
 
 If either agent flags a real problem (not a false alarm), fix `tune_strategy.py` accordingly, re-run both steps above, and do not proceed until both agents agree the output is trustworthy. Record what was found and fixed (if anything) in the commit message for this task.
 
-- [ ] **Step 4: Confirm the output file is complete**
+Actual: ran three full rounds (two agents in parallel each round, none trusting another's or the tuner's self-assessment) before both agreed the output was trustworthy:
+- **Round 1** found: `_get_fib_zones` anchored fib levels from the swing high regardless of direction, which inflated `momentum_equilibrium`'s edge via negative-risk trades; the tuner never filtered signals through production's RR validator; `london_session_breakout`'s only positive test trade was a `CLOSED_MANUAL` force-close artifact; the shared-config median used upper-median on even-length lists; the output JSON contained a bare `Infinity` literal.
+- **Round 2** (after fixing all of round 1) found two more: a floating-point RR-boundary bug (`rr_ratio < min_rr_ratio` rejected ~27% of a rule's trades at a round-number RR target due to float cancellation) and confirmed `london_session_breakout`'s force-close problem was still present (the round-1 fixes hadn't touched it).
+- **Round 3** (after fixing round 2's findings) — both reviewers PASS. `momentum_equilibrium` and `london_session_breakout` both now honestly fail their gate (0.89/19 trades, 0.97/6 trades); `order_block_retest` is the sole rule enabled, and one reviewer independently re-derived its edge against the real production signal population (not just the tuner's own 114-trade sample): +0.104R expectancy over 2,061 signals, bootstrap 95% CI [+0.035R, +0.175R], P(edge≤0)=0.0016 — confirmed real. Remaining methodology gaps (tuner's own gate undersamples the production population by ~94%, expiry not applied inside the scoring loop, zero transaction costs modeled, MT5 position-cap creates a further unvalidated distribution) were logged as follow-up work, not blocking — see the commit message on `tuned_configs/1h.json` for the exact list.
+
+See commits `5b5c76b`, `fc0365d`, `caa41f9` for what was found and fixed.
+
+- [x] **Step 4: Confirm the output file is complete**
 
 Run:
 ```bash
@@ -2080,7 +2087,7 @@ print('OK')
 ```
 Expected: `OK`, and `enabled_rules` is non-empty (if it's empty, the strategy has no rule that survived real 1H validation — stop and discuss with the user before proceeding to Task 12, do not ship an empty strategy silently).
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 cd packages/engine
@@ -2099,7 +2106,7 @@ git commit -m "feat: add validated 1H strategy config from real-data tuning"
 **Interfaces:**
 - Consumes: `packages/engine/tuned_configs/1h.json` (Task 11).
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Create `packages/engine/tests/test_timeframe_scope.py`:
 ```python
@@ -2117,12 +2124,12 @@ class TestTimeframeScope:
         assert svc_module.TIMEFRAMES == ['1h']
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `cd packages/engine && source venv/bin/activate && python -m pytest tests/test_timeframe_scope.py -v`
 Expected: FAIL — `TIMEFRAMES == ['5m', '15m', '30m', '1h', '4h', '1d']`
 
-- [ ] **Step 3: Scope TIMEFRAMES down to 1h**
+- [x] **Step 3: Scope TIMEFRAMES down to 1h**
 
 In `packages/engine/run_multi_timeframe_service.py`, find (around line 54):
 ```python
@@ -2138,12 +2145,12 @@ Replace with:
 TIMEFRAMES = ['1h']
 ```
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `cd packages/engine && source venv/bin/activate && python -m pytest tests/test_timeframe_scope.py -v`
 Expected: PASS
 
-- [ ] **Step 5: Load the tuned config in TimeframeWorker**
+- [x] **Step 5: Load the tuned config in TimeframeWorker**
 
 In `packages/engine/run_multi_timeframe_service.py`, add `import json` near the top with the other imports (it's not currently imported). Then find, in `TimeframeWorker._run()` (the block modified in Task 6 Step 6):
 ```python
@@ -2191,7 +2198,7 @@ Replace with:
             )
 ```
 
-- [ ] **Step 6: Update the startup rule-count display**
+- [x] **Step 6: Update the startup rule-count display**
 
 In `packages/engine/run_multi_timeframe_service.py`, find in `MultiTimeframeService.start()` (around line 261-263):
 ```python
@@ -2215,7 +2222,7 @@ Replace with:
                 print(f"   ✅ {rule}")
 ```
 
-- [ ] **Step 7: Smoke-test the full wiring**
+- [x] **Step 7: Smoke-test the full wiring**
 
 Run:
 ```bash
@@ -2234,12 +2241,14 @@ cat /tmp/final_smoke.log | grep -E "Loaded tuned config|Enabled rules|Error|Trac
 ```
 Expected: shows `Loaded tuned config from .../tuned_configs/1h.json` and `Enabled rules: [...]` listing whatever `tuned_configs/1h.json` actually contains, with no errors/tracebacks.
 
-- [ ] **Step 8: Run the full test suite**
+- [x] **Step 8: Run the full test suite**
 
 Run: `cd packages/engine && source venv/bin/activate && python -m pytest tests/ -v`
 Expected: all pass.
 
-- [ ] **Step 9: Commit**
+Actual: 2 pre-existing failures in `test_strategy.py` (stale rule name `rule_1_618_retracement` from an old naming scheme — confirmed present on `main` before this task's changes too, via `git stash`) and 1 pre-existing collection error in `test_api.py` (`fastapi` not installed in `venv`). Neither touches this task's code path; out of scope here.
+
+- [x] **Step 9: Commit**
 
 ```bash
 cd packages/engine
