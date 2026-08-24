@@ -296,3 +296,7 @@ class TestBuildSearchGrid:
         grid = build_search_grid(base_15m)
         # swing_lookback baseline at 15m = 5*16 = 80; factors [0.7, 1.0, 1.4]
         assert grid['swing_lookback'] == sorted({round(80 * f) for f in (0.7, 1.0, 1.4)})
+
+    def test_preserves_the_original_1h_grid_key_order(self):
+        grid = build_search_grid(BASE_1H_CONFIG)
+        assert list(grid.keys()) == ['fib_tolerance', 'swing_lookback', 'trend_lookback', 'atr_period', 'default_rr_ratio']

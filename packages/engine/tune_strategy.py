@@ -107,12 +107,20 @@ RATIO_PARAM_GRID = {
 
 
 def build_search_grid(base_config):
-    """Combine the candle-count factor grid (scaled off base_config's
+    """
+    Combine the candle-count factor grid (scaled off base_config's
     already-timeframe-scaled values) with the timeframe-independent ratio
-    param grid."""
-    grid = dict(RATIO_PARAM_GRID)
+    param grid, preserving the original SEARCH_GRID literal's key order
+    exactly (fib_tolerance, swing_lookback, trend_lookback, atr_period,
+    default_rr_ratio). tune_rule's coordinate search is order-sensitive —
+    each param is tuned against whatever earlier params in the iteration
+    have already been updated — so a different key order can change the
+    final tuned result even though dict *content* equality looks identical.
+    """
+    grid = {'fib_tolerance': RATIO_PARAM_GRID['fib_tolerance']}
     for param, factors in CANDLE_COUNT_GRID_FACTORS.items():
         grid[param] = sorted({round(base_config[param] * f) for f in factors})
+    grid['default_rr_ratio'] = RATIO_PARAM_GRID['default_rr_ratio']
     return grid
 
 MIN_TRAIN_TRADES = 15
