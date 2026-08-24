@@ -9,6 +9,8 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 import asyncio
 from unittest.mock import AsyncMock
 
+import pandas as pd
+
 from fetch_metaapi_history import validate_candles, candles_to_dataframe, fetch_all_candles
 
 
@@ -84,6 +86,20 @@ class TestFetchAllCandles:
         # stops after the short page (< page_limit signals end of history) —
         # never makes the third call
         assert account.get_historical_candles.call_count == 2
+
+        # the cursor must actually advance backward between pages — a frozen
+        # cursor (e.g. the `cursor = min(...)` line deleted) would refetch
+        # the same page forever in production, and the assertions above
+        # alone don't catch that since side_effect is consumed by call
+        # order, not by arguments.
+        call_args_list = account.get_historical_candles.call_args_list
+        first_start_time = call_args_list[0].kwargs['start_time']
+        second_start_time = call_args_list[1].kwargs['start_time']
+        assert second_start_time != first_start_time
+        expected_second_start_time = min(
+            pd.to_datetime(c['time'], utc=True).to_pydatetime() for c in full_page
+        )
+        assert second_start_time == expected_second_start_time
 
     def test_stops_immediately_on_empty_first_page(self):
         account = AsyncMock()
