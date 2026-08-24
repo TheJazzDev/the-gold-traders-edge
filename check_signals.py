@@ -2,15 +2,17 @@
 """
 Quick script to check signals in Railway PostgreSQL database
 """
+import os
+import sys
 import psycopg2
 from datetime import datetime
 
-# Railway DATABASE_URL
-DATABASE_URL = "postgresql://postgres:WuOXHUmfceYvlbNuyUrhAsQgJPmFyhJv@postgres.railway.internal:5432/railway"
-
-# For local testing, use the public URL (get from Railway dashboard)
-# Replace this with your actual public connection string from Railway
-# DATABASE_URL = "postgresql://postgres:password@<your-railway-host>:5432/railway"
+DATABASE_URL = os.getenv("DATABASE_URL")
+if not DATABASE_URL:
+    print("❌ DATABASE_URL environment variable is not set.")
+    print("   Set it to your Railway Postgres connection string before running this script, e.g.:")
+    print("   DATABASE_URL='postgresql://...' python check_signals.py")
+    sys.exit(1)
 
 print("=" * 80)
 print("🔍 CHECKING SIGNALS IN DATABASE")
