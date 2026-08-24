@@ -25,6 +25,7 @@ from tune_strategy import (
     _production_valid_strategy_func,
     _resolved_stats,
 )
+from tune_strategy import TIMEFRAME_MINUTES, default_output_path
 from signals.gold_strategy import GoldStrategy
 from backtesting.engine import Signal as StrategySignal, Trade, TradeDirection, TradeStatus
 
@@ -300,3 +301,12 @@ class TestBuildSearchGrid:
     def test_preserves_the_original_1h_grid_key_order(self):
         grid = build_search_grid(BASE_1H_CONFIG)
         assert list(grid.keys()) == ['fib_tolerance', 'swing_lookback', 'trend_lookback', 'atr_period', 'default_rr_ratio']
+
+
+class TestTimeframeDefaults:
+    def test_default_output_path_uses_timeframe(self):
+        assert default_output_path('15m') == 'tuned_configs/15m.json'
+        assert default_output_path('1h') == 'tuned_configs/1h.json'
+
+    def test_timeframe_minutes_covers_all_supported_timeframes(self):
+        assert TIMEFRAME_MINUTES == {'5m': 5, '15m': 15, '30m': 30, '1h': 60, '4h': 240, '1d': 1440}

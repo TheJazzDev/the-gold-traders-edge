@@ -126,6 +126,14 @@ def build_search_grid(base_config):
 MIN_TRAIN_TRADES = 15
 MIN_TEST_TRADES = 5
 
+TIMEFRAME_MINUTES = {
+    '5m': 5, '15m': 15, '30m': 30, '1h': 60, '4h': 240, '1d': 1440,
+}
+
+
+def default_output_path(timeframe):
+    return f'tuned_configs/{timeframe}.json'
+
 
 def split_train_test(df, train_frac=0.7):
     """Chronological split — train is the older `train_frac` of candles."""
@@ -280,11 +288,21 @@ def percentile(values, pct):
 
 
 def main():
-    parser = argparse.ArgumentParser(description='Tune and validate GoldStrategy for 1H')
-    parser.add_argument('--data', type=str, required=True, help='Path to 1H OHLCV CSV')
-    parser.add_argument('--output', type=str, default='tuned_configs/1h.json')
+    parser = argparse.ArgumentParser(description='Tune and validate GoldStrategy for a given timeframe')
+    parser.add_argument('--data', type=str, required=True, help='Path to OHLCV CSV for the target timeframe')
+    parser.add_argument('--timeframe', type=str, required=True, choices=sorted(TIMEFRAME_MINUTES),
+                         help='Target timeframe, e.g. "1h" or "15m"')
+    parser.add_argument('--output', type=str, default=None,
+                         help='Output path (default: tuned_configs/<timeframe>.json)')
     parser.add_argument('--train-frac', type=float, default=0.7)
     args = parser.parse_args()
+
+    output_path_str = args.output or default_output_path(args.timeframe)
+
+    base_config = scale_baseline_config(
+        GoldStrategy.DEFAULT_CONFIG, from_minutes=240, to_minutes=TIMEFRAME_MINUTES[args.timeframe]
+    )
+    search_grid = build_search_grid(base_config)
 
     loader = GoldDataLoader()
     df = loader.load_from_csv(args.data)
@@ -299,7 +317,7 @@ def main():
 
     for rule_name in RULES:
         print(f"\n=== Tuning {rule_name} ===")
-        tuned_config = tune_rule(train_df, rule_name)
+        tuned_config = tune_rule(train_df, rule_name, base_config, search_grid)
         tuned_config_by_rule[rule_name] = tuned_config
 
         train_stats, _ = validate_rule(train_df, rule_name, tuned_config)
@@ -328,14 +346,14 @@ def main():
 
     if candidate_rules:
         final_config = {}
-        for param in BASE_1H_CONFIG:
+        for param in base_config:
             values = [tuned_config_by_rule[r][param] for r in candidate_rules]
             # median_low (not an interpolated median) so an even-length list
             # always resolves to a value some candidate rule actually chose,
             # rather than a number in between that nothing was tuned around.
             final_config[param] = statistics.median_low(values)
     else:
-        final_config = dict(BASE_1H_CONFIG)
+        final_config = dict(base_config)
 
     # Re-validate every candidate under the FINAL shared config, since
     # production runs all enabled rules with one GoldStrategy config object.
@@ -359,7 +377,7 @@ def main():
     output = {
         'generated_at': datetime.now(timezone.utc).isoformat(),
         'symbol': 'XAUUSD',
-        'timeframe': '1h',
+        'timeframe': args.timeframe,
         'data_range': {
             'start': str(df.index[0]),
             'end': str(df.index[-1]),
@@ -373,7 +391,7 @@ def main():
         'combined_test_slice_result': _resolved_stats(combined_result) if combined_result else None,
     }
 
-    output_path = Path(args.output)
+    output_path = Path(output_path_str)
     output_path.parent.mkdir(parents=True, exist_ok=True)
     with open(output_path, 'w') as f:
         json.dump(json_safe(output), f, indent=2, default=str, allow_nan=False)
