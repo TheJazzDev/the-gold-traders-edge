@@ -13,8 +13,11 @@ from pathlib import Path
 # Add src to path
 sys.path.insert(0, str(Path(__file__).parent.parent / 'src'))
 
-from signals.gold_strategy import GoldStrategy, RuleResult, FibZone
+from unittest.mock import MagicMock
+
+from signals.gold_strategy import GoldStrategy, RuleResult, FibZone, MomentumStrength, MarketStructure
 from backtesting.engine import TradeDirection, Signal
+from analysis.technical import TrendDirection
 
 
 class TestGoldStrategy:
@@ -125,6 +128,76 @@ class TestGoldStrategy:
         assert fib.swing_high == 2100.0
         assert fib.direction == 'up'
         assert abs(fib.level_618 - 1976.4) < 0.1
+
+
+class TestFibLevelsDirection:
+    """Regression coverage for the fix: fib levels must anchor from the
+    extreme the market is retracing *from* (high for 'up', low for 'down'),
+    not always from the high. Anchoring both directions from the high put
+    level_618 on the wrong side of level_500 for a 'down' zone."""
+
+    @pytest.fixture
+    def strategy(self):
+        return GoldStrategy()
+
+    def test_up_levels_decrease_from_high_toward_low(self, strategy):
+        levels = strategy._fib_levels(swing_low=1900.0, swing_high=2100.0, direction='up')
+        assert levels['level_236'] > levels['level_382'] > levels['level_500'] > levels['level_618'] > levels['level_786']
+        assert levels['level_618'] == pytest.approx(1976.4)
+
+    def test_down_levels_increase_from_low_toward_high(self, strategy):
+        levels = strategy._fib_levels(swing_low=1900.0, swing_high=2100.0, direction='down')
+        assert levels['level_236'] < levels['level_382'] < levels['level_500'] < levels['level_618'] < levels['level_786']
+        assert levels['level_618'] == pytest.approx(2023.6)
+
+    def test_500_level_is_the_same_midpoint_regardless_of_direction(self, strategy):
+        up = strategy._fib_levels(1900.0, 2100.0, 'up')
+        down = strategy._fib_levels(1900.0, 2100.0, 'down')
+        assert up['level_500'] == pytest.approx(2000.0)
+        assert down['level_500'] == pytest.approx(2000.0)
+
+
+class TestMomentumEquilibriumRiskGuard:
+    """Regression coverage for the fix: _momentum_equilibrium must refuse to
+    trigger rather than emit a signal whose stop-loss lands on the wrong
+    side of entry (negative/zero risk)."""
+
+    @pytest.fixture
+    def strategy(self):
+        return GoldStrategy()
+
+    def test_rejects_non_positive_risk(self, strategy):
+        dates = pd.date_range(start='2024-01-01', periods=101, freq='4h')
+        df = pd.DataFrame({
+            'open': [2000.0] * 101,
+            'high': [2005.0] * 101,
+            'low': [1995.0] * 101,
+            'close': [2000.0] * 101,  # sits at fib.level_500 below
+        }, index=dates)
+        idx = 100
+
+        fake_ta = MagicMock()
+        fake_ta.calculate_atr.return_value = pd.Series([5.0])
+        fake_ta.detect_trend.return_value = TrendDirection.UPTREND
+        strategy.ta = fake_ta
+        strategy.df = df
+
+        # A pathological zone with level_618 on the wrong side of level_500
+        # (as the old direction-agnostic _fib_levels bug could produce for a
+        # 'down' zone) must not translate into a negative-risk LONG.
+        strategy._get_fib_zones = lambda df, idx: FibZone(
+            swing_low=1900.0, swing_high=2100.0,
+            level_236=2052.8, level_382=2023.6, level_500=2000.0,
+            level_618=2010.0,
+            level_786=1942.8, direction='up',
+        )
+        strategy._get_momentum_strength = lambda df, idx, lookback=10: MomentumStrength.STRONG
+        strategy._detect_reversal_pattern = lambda df, idx: None
+        strategy._detect_market_structure = lambda df, idx: MarketStructure.NONE
+
+        result = strategy._momentum_equilibrium(df, idx)
+
+        assert result.triggered is False
 
 
 class TestRule1GoldenRetracement:

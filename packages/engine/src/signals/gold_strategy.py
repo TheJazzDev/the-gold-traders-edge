@@ -230,6 +230,32 @@ class GoldStrategy:
 
     # ==================== HELPER METHODS ====================
 
+    def _fib_levels(self, swing_low: float, swing_high: float, direction: str) -> Dict[str, float]:
+        """
+        Retracement levels anchored from the price extreme the market is
+        retracing *from*: the high for an uptrend pullback, the low for a
+        downtrend bounce. Anchoring both directions from the high (as this
+        used to do) flips level_618 to the wrong side of level_500 for a
+        'down' zone, which can hand a rule a stop-loss on the wrong side of
+        entry — see _momentum_equilibrium's risk guard.
+        """
+        price_range = swing_high - swing_low
+        if direction == 'up':
+            return {
+                'level_236': swing_high - (price_range * 0.236),
+                'level_382': swing_high - (price_range * 0.382),
+                'level_500': swing_high - (price_range * 0.500),
+                'level_618': swing_high - (price_range * 0.618),
+                'level_786': swing_high - (price_range * 0.786),
+            }
+        return {
+            'level_236': swing_low + (price_range * 0.236),
+            'level_382': swing_low + (price_range * 0.382),
+            'level_500': swing_low + (price_range * 0.500),
+            'level_618': swing_low + (price_range * 0.618),
+            'level_786': swing_low + (price_range * 0.786),
+        }
+
     def _get_fib_zones(self, df: pd.DataFrame, idx: int) -> Optional[FibZone]:
         """Calculate Fibonacci zones from recent swing points."""
         swings = self.ta.detect_swing_points(
@@ -249,26 +275,15 @@ class GoldStrategy:
         recent_high = highs[-1]
         recent_low = lows[-1]
 
-        if recent_high.index > recent_low.index:
-            direction = 'up'
-            swing_low = recent_low.price
-            swing_high = recent_high.price
-        else:
-            direction = 'down'
-            swing_low = recent_low.price
-            swing_high = recent_high.price
-
-        price_range = swing_high - swing_low
+        direction = 'up' if recent_high.index > recent_low.index else 'down'
+        swing_low = recent_low.price
+        swing_high = recent_high.price
 
         return FibZone(
             swing_low=swing_low,
             swing_high=swing_high,
-            level_236=swing_high - (price_range * 0.236),
-            level_382=swing_high - (price_range * 0.382),
-            level_500=swing_high - (price_range * 0.500),
-            level_618=swing_high - (price_range * 0.618),
-            level_786=swing_high - (price_range * 0.786),
-            direction=direction
+            direction=direction,
+            **self._fib_levels(swing_low, swing_high, direction)
         )
 
     def _is_near_level(self, price: float, level: float) -> bool:
@@ -637,15 +652,25 @@ class GoldStrategy:
             entry_price = current['close']
             stop_loss = fib.level_618 - (atr * 0.3)
             risk = entry_price - stop_loss
-            take_profit = entry_price + (risk * self.config['default_rr_ratio'])
         elif fib.direction == 'down' and trend == TrendDirection.DOWNTREND:
             direction = TradeDirection.SHORT
             entry_price = current['close']
             stop_loss = fib.level_618 + (atr * 0.3)
             risk = stop_loss - entry_price
-            take_profit = entry_price - (risk * self.config['default_rr_ratio'])
         else:
             return result
+
+        # A malformed fib zone (or an entry that landed on the wrong side of
+        # level_618) can put the stop-loss on the wrong side of entry. Refuse
+        # rather than emit a signal with negative/zero risk.
+        if risk <= 0:
+            return result
+
+        take_profit = (
+            entry_price + (risk * self.config['default_rr_ratio'])
+            if direction == TradeDirection.LONG
+            else entry_price - (risk * self.config['default_rr_ratio'])
+        )
 
         pattern = self._detect_reversal_pattern(df, idx)
         structure = self._detect_market_structure(df, idx)
