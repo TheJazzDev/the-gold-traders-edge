@@ -52,3 +52,9 @@ class TestCandlesToDataframe:
         ]
         df = candles_to_dataframe(candles)
         assert len(df) == 1
+
+    def test_empty_candle_list_returns_empty_dataframe(self):
+        df = candles_to_dataframe([])
+        assert list(df.columns) == ['open', 'high', 'low', 'close', 'volume']
+        assert df.index.name == 'Datetime'
+        assert len(df) == 0

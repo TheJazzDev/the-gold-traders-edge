@@ -46,6 +46,11 @@ def candles_to_dataframe(candles):
     GoldDataLoader.load_from_csv() already reads: a 'Datetime'-named index
     and lowercase open/high/low/close/volume columns, sorted ascending,
     deduplicated by timestamp."""
+    if not candles:
+        return pd.DataFrame(
+            columns=['open', 'high', 'low', 'close', 'volume'],
+            index=pd.DatetimeIndex([], name='Datetime'),
+        )
     df = pd.DataFrame(candles)
     df['time'] = pd.to_datetime(df['time'], utc=True)
     df = df.rename(columns={'tickVolume': 'volume'})
