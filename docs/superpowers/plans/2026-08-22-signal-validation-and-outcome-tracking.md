@@ -2266,7 +2266,7 @@ git commit -m "feat: scope live service to validated 1H timeframe with tuned con
 **Interfaces:**
 - None — standalone script fix.
 
-- [ ] **Step 1: Replace the hardcoded connection string**
+- [x] **Step 1: Replace the hardcoded connection string**
 
 In `check_signals.py`, replace lines 5-13:
 ```python
@@ -2295,19 +2295,21 @@ if not DATABASE_URL:
     sys.exit(1)
 ```
 
-- [ ] **Step 2: Verify it fails closed without the env var**
+- [x] **Step 2: Verify it fails closed without the env var**
 
 Run: `python3 check_signals.py`
 Expected: prints the "DATABASE_URL environment variable is not set" message and exits with status 1 (does not attempt a connection).
 
-- [ ] **Step 3: Commit**
+Actual: confirmed — exit 1, correct message. `psycopg2` itself isn't installed in this environment (declared in `requirements.txt` but missing from `packages/engine/venv`, a pre-existing gap unrelated to this fix), so the check was verified by stubbing the `psycopg2` import to isolate the DATABASE_URL logic specifically.
+
+- [x] **Step 3: Commit**
 
 ```bash
 git add check_signals.py
 git commit -m "security: remove hardcoded Postgres credential from check_signals.py"
 ```
 
-- [ ] **Step 4: Flag credential rotation to the user (not an automated step)**
+- [x] **Step 4: Flag credential rotation to the user (not an automated step)**
 
 This commit removes the credential from the file going forward, but the password is already exposed in git history from prior commits and must be rotated in the Railway dashboard (Postgres service → Variables → regenerate password) regardless of this fix. Tell the user this explicitly when reporting this task complete — do not consider the exposure resolved just because the file is fixed.
 
