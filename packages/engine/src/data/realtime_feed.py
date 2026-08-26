@@ -131,7 +131,7 @@ class RealtimeDataFeed(ABC):
         tf_hours = {
             "1H": 1, "4H": 4, "1D": 24
         }
-        hours = tf_hours.get(self.timeframe, 4)
+        hours = tf_hours.get(self.timeframe.upper(), 4)
 
         # Calculate next candle close time
         # For 4H: 00:00, 04:00, 08:00, 12:00, 16:00, 20:00 UTC
@@ -158,7 +158,7 @@ class RealtimeDataFeed(ABC):
             "1M": 1, "5M": 5, "15M": 15, "30M": 30,
             "1H": 60, "4H": 240, "1D": 1440
         }
-        return tf_map.get(self.timeframe, 240)
+        return tf_map.get(self.timeframe.upper(), 240)
 
 
 class YahooFinanceDataFeed(RealtimeDataFeed):
@@ -233,7 +233,7 @@ class YahooFinanceDataFeed(RealtimeDataFeed):
             "1M": "1m", "5M": "5m", "15M": "15m", "30M": "30m",
             "1H": "1h", "2H": "2h", "4H": "4h", "1D": "1d"
         }
-        interval = interval_map.get(self.timeframe, "4h")
+        interval = interval_map.get(self.timeframe.upper(), "4h")
 
         # Calculate period (Yahoo has limits on historical data)
         # For intraday: max 730 days
@@ -386,7 +386,7 @@ class MT5DataFeed(RealtimeDataFeed):
             "4H": self.mt5.TIMEFRAME_H4,
             "1D": self.mt5.TIMEFRAME_D1,
         }
-        timeframe = tf_map.get(self.timeframe, self.mt5.TIMEFRAME_H4)
+        timeframe = tf_map.get(self.timeframe.upper(), self.mt5.TIMEFRAME_H4)
 
         # Fetch candles
         rates = self.mt5.copy_rates_from_pos(self.symbol, timeframe, 0, count)
