@@ -243,13 +243,16 @@ class YahooFinanceDataFeed(RealtimeDataFeed):
         else:
             period_days = count
 
-        # Fetch data
-        end_date = datetime.now()
-        start_date = end_date - timedelta(days=period_days)
+        # Fetch data. Deliberately no `end` kwarg: a date-only `end` string
+        # excludes that entire calendar day from Yahoo's response regardless
+        # of what time of day this runs (live-verified against GC=F — see
+        # tests/test_realtime_feed_end_date.py), which permanently capped
+        # this feed at yesterday's last candle. Omitting `end` makes yfinance
+        # default to now, which returns the actual latest available candle.
+        start_date = datetime.now() - timedelta(days=period_days)
 
         df = self.yf_ticker.history(
             start=start_date.strftime("%Y-%m-%d"),
-            end=end_date.strftime("%Y-%m-%d"),
             interval=interval
         )
 
