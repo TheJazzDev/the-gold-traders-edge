@@ -64,23 +64,20 @@ class TestGoldStrategy:
         assert strategy.config['atr_period'] == 14
 
     def test_only_profitable_rules_enabled(self, strategy):
-        """Test that only profitable rules (1, 5, 6) are enabled."""
-        assert strategy.rules_enabled.get('rule_1_618_retracement') == True
-        assert strategy.rules_enabled.get('rule_5_ath_breakout_retest') == True
-        assert strategy.rules_enabled.get('rule_6_50_momentum') == True
-        
-        # Unprofitable rules should not exist or be disabled
-        assert 'rule_2_786_deep_discount' not in strategy.rules_enabled
-        assert 'rule_3_236_shallow_pullback' not in strategy.rules_enabled
-        assert 'rule_4_consolidation_break' not in strategy.rules_enabled
+        """Test that all 5 currently-tracked rules are enabled by default."""
+        assert strategy.rules_enabled.get('momentum_equilibrium') == True
+        assert strategy.rules_enabled.get('london_session_breakout') == True
+        assert strategy.rules_enabled.get('golden_fibonacci') == True
+        assert strategy.rules_enabled.get('ath_retest') == True
+        assert strategy.rules_enabled.get('order_block_retest') == True
 
     def test_set_rule_enabled(self, strategy):
         """Test enabling/disabling rules."""
-        strategy.set_rule_enabled('rule_1_618_retracement', False)
-        assert strategy.rules_enabled['rule_1_618_retracement'] == False
-        
-        strategy.set_rule_enabled('rule_1_618_retracement', True)
-        assert strategy.rules_enabled['rule_1_618_retracement'] == True
+        strategy.set_rule_enabled('golden_fibonacci', False)
+        assert strategy.rules_enabled['golden_fibonacci'] == False
+
+        strategy.set_rule_enabled('golden_fibonacci', True)
+        assert strategy.rules_enabled['golden_fibonacci'] == True
 
     def test_evaluate_returns_none_for_insufficient_data(self, strategy, sample_df):
         """Test that evaluate returns None when there's not enough data."""

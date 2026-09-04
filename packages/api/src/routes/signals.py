@@ -111,62 +111,6 @@ async def get_signals_history(
     }
 
 
-@router.get("/latest")
-async def get_latest_signals(
-    timeframe: Optional[str] = None,
-    rules: Optional[str] = None,
-    db: Session = Depends(get_db)
-):
-    """
-    Get latest signals with optional filters.
-
-    Args:
-        timeframe: Filter by timeframe (optional)
-        rules: Filter by strategy/rules (optional)
-        db: Database session
-
-    Returns:
-        Latest signals matching filters
-    """
-    query = db.query(Signal)
-
-    # Apply filters
-    if timeframe:
-        query = query.filter(Signal.timeframe == timeframe)
-
-    if rules:
-        query = query.filter(Signal.strategy_name == rules)
-
-    # Get latest signals
-    signals = query.order_by(desc(Signal.timestamp)).limit(10).all()
-
-    return {
-        "timestamp": datetime.now().isoformat(),
-        "symbol": "XAUUSD",
-        "timeframe": timeframe or "4h",
-        "current_price": None,  # Will be populated by market data if needed
-        "signals": [
-            {
-                "id": s.id,
-                "timestamp": s.timestamp.isoformat() if s.timestamp else None,
-                "direction": s.direction.value,
-                "entry_price": s.entry_price,
-                "stop_loss": s.stop_loss,
-                "take_profit": s.take_profit,
-                "confidence": s.confidence,
-                "status": s.status.value,
-                "strategy_name": s.strategy_name,
-                "risk_reward_ratio": s.risk_reward_ratio
-            } for s in signals
-        ],
-        "market_context": {
-            "trend": "neutral",
-            "volatility": "moderate",
-            "atr": 15.0
-        }
-    }
-
-
 @router.get("/", response_model=SignalList)
 async def get_signals(
     page: int = Query(1, ge=1),
@@ -313,81 +257,35 @@ async def get_performance_stats(
     """
     Get signal performance statistics.
 
+    Delegates to SignalRepository.get_performance_stats() — the same
+    R-multiple math the weekly Telegram report uses — instead of the old
+    inline implementation here, which computed wins/losses from `Signal.pnl`.
+    `pnl` is always NULL in signals-only mode (no real account behind these
+    signals yet), so that implementation silently counted every closed
+    signal as neither a win nor a loss and pinned win_rate at 0%.
+
     Args:
-        days: Calculate stats for last N days (default: all time)
+        days: Calculate stats for last N days (default: all time, via a
+            30-year lookback since the repository method requires a value)
         db: Database session
 
     Returns:
         Performance statistics
     """
-    query = db.query(Signal)
-
-    if days:
-        since = datetime.now() - timedelta(days=days)
-        query = query.filter(Signal.timestamp >= since)
-
-    # Get closed signals
-    closed_signals = query.filter(
-        Signal.status.in_([
-            SignalStatus.CLOSED_TP,
-            SignalStatus.CLOSED_SL,
-            SignalStatus.CLOSED_MANUAL
-        ])
-    ).all()
-
-    total_signals = query.count()
-    total_closed = len(closed_signals)
-
-    if total_closed == 0:
-        return PerformanceStats(
-            total_signals=total_signals,
-            total_closed=0,
-            win_count=0,
-            loss_count=0,
-            win_rate=0.0,
-            total_pnl=0.0,
-            total_pnl_pct=0.0,
-            avg_win=0.0,
-            avg_loss=0.0,
-            profit_factor=0.0,
-            largest_win=0.0,
-            largest_loss=0.0
-        )
-
-    # Calculate stats
-    wins = [s for s in closed_signals if s.pnl and s.pnl > 0]
-    losses = [s for s in closed_signals if s.pnl and s.pnl < 0]
-
-    win_count = len(wins)
-    loss_count = len(losses)
-    win_rate = (win_count / total_closed) * 100 if total_closed > 0 else 0
-
-    total_pnl = sum(s.pnl for s in closed_signals if s.pnl)
-    total_pnl_pct = sum(s.pnl_pct for s in closed_signals if s.pnl_pct)
-
-    avg_win = sum(s.pnl for s in wins) / win_count if win_count > 0 else 0
-    avg_loss = sum(s.pnl for s in losses) / loss_count if loss_count > 0 else 0
-
-    total_wins = sum(s.pnl for s in wins)
-    total_losses = abs(sum(s.pnl for s in losses))
-    profit_factor = total_wins / total_losses if total_losses > 0 else 0
-
-    largest_win = max((s.pnl for s in wins), default=0)
-    largest_loss = min((s.pnl for s in losses), default=0)
+    repo = SignalRepository(db)
+    stats = repo.get_performance_stats(days=days or 365 * 30)
 
     return PerformanceStats(
-        total_signals=total_signals,
-        total_closed=total_closed,
-        win_count=win_count,
-        loss_count=loss_count,
-        win_rate=win_rate,
-        total_pnl=total_pnl,
-        total_pnl_pct=total_pnl_pct,
-        avg_win=avg_win,
-        avg_loss=avg_loss,
-        profit_factor=profit_factor,
-        largest_win=largest_win,
-        largest_loss=largest_loss
+        total_signals=stats['total_signals'],
+        total_closed=stats['tp_hits'] + stats['sl_hits'] + stats['closed_manual'],
+        win_count=stats['tp_hits'],
+        loss_count=stats['sl_hits'],
+        win_rate=stats['win_rate'],
+        avg_r_multiple=stats['avg_r_multiple'],
+        net_r_multiple=stats['net_r_multiple'],
+        profit_factor=stats['profit_factor'],
+        largest_win_r=stats['largest_win_r'],
+        largest_loss_r=stats['largest_loss_r'],
     )
 
 

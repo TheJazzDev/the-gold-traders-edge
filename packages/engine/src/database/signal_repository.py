@@ -277,7 +277,8 @@ class SignalRepository:
 
         Returns:
             Dictionary with keys: total_signals, tp_hits, sl_hits, expired,
-            still_open, closed_manual, win_rate, avg_r_multiple, net_r_multiple
+            still_open, closed_manual, win_rate, avg_r_multiple, net_r_multiple,
+            profit_factor, largest_win_r, largest_loss_r
         """
         cutoff_date = datetime.utcnow() - timedelta(days=days)
         filters = [Signal.timestamp >= cutoff_date]
@@ -308,6 +309,20 @@ class SignalRepository:
         avg_r = (sum(r_multiples) / len(r_multiples)) if r_multiples else 0.0
         net_r = sum(r_multiples)
 
+        gains = [r for r in r_multiples if r > 0]
+        losses = [r for r in r_multiples if r < 0]
+        total_gain_r = sum(gains)
+        total_loss_r = abs(sum(losses))
+        if total_loss_r > 0:
+            profit_factor = total_gain_r / total_loss_r
+        elif total_gain_r > 0:
+            # No losses yet to divide by — genuinely undefined (would be
+            # infinite), not 0. Reporting 0 here would read as "unprofitable"
+            # for what is actually a flawless small sample.
+            profit_factor = None
+        else:
+            profit_factor = 0.0
+
         return {
             'total_signals': len(all_signals),
             'tp_hits': len(tp_hits),
@@ -318,6 +333,9 @@ class SignalRepository:
             'win_rate': win_rate,
             'avg_r_multiple': avg_r,
             'net_r_multiple': net_r,
+            'profit_factor': profit_factor,
+            'largest_win_r': max(gains, default=0.0),
+            'largest_loss_r': min(losses, default=0.0),
         }
 
     def delete(self, signal_id: int) -> bool:

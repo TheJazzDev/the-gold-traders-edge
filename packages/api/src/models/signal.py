@@ -79,16 +79,21 @@ class ServiceStatus(BaseModel):
 
 
 class PerformanceStats(BaseModel):
-    """Signal performance statistics"""
+    """
+    Signal performance statistics.
+
+    There is no real dollar account behind these signals yet, so edge is
+    measured over resolved (TP/SL) signals in R-multiples (pnl_pips /
+    risk_pips) rather than dollar P&L — see
+    SignalRepository.get_performance_stats().
+    """
     total_signals: int
     total_closed: int
     win_count: int
     loss_count: int
     win_rate: float
-    total_pnl: float
-    total_pnl_pct: float
-    avg_win: float
-    avg_loss: float
-    profit_factor: float
-    largest_win: float
-    largest_loss: float
+    avg_r_multiple: float
+    net_r_multiple: float
+    profit_factor: Optional[float] = None  # None = undefined (no losses yet), not 0
+    largest_win_r: float
+    largest_loss_r: float
