@@ -256,6 +256,14 @@ class YahooFinanceDataFeed(RealtimeDataFeed):
             interval=interval
         )
 
+        # yfinance returns the index tz-aware in the exchange's local timezone
+        # (America/New_York for GC=F), not UTC. Every downstream consumer
+        # (Telegram/console/logger formatters, DB storage) treats candle
+        # timestamps as UTC, so normalize here at the source rather than at
+        # each consumer.
+        if getattr(df.index, 'tz', None) is not None:
+            df.index = df.index.tz_convert('UTC').tz_localize(None)
+
         # Standardize columns
         df.columns = [col.lower() for col in df.columns]
         df = df[['open', 'high', 'low', 'close', 'volume']].copy()
