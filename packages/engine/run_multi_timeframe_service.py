@@ -189,6 +189,39 @@ class TimeframeWorker:
             enabled_names = [name for name, on in strategy.rules_enabled.items() if on]
             logger.info(f"   [{self.timeframe}] Enabled rules: {enabled_names}")
 
+            # The `enabled_strategies` / `min_confidence` / `min_rr_ratio`
+            # settings are editable via the admin UI and API, but until now
+            # nothing in the engine ever read them back — toggling a
+            # strategy off there had no effect on what actually ran. This
+            # closure re-reads them once per candle close (see the
+            # pre_run_hook wiring below) and mutates the already-running
+            # strategy/validator in place; GoldStrategy.evaluate() and
+            # SignalValidator.validate() both re-read their state on every
+            # call, so no restart is needed for a change to take effect.
+            def refresh_settings():
+                db_manager = DatabaseManager(self.database_url)
+                with db_manager.session_scope() as session:
+                    Base.metadata.create_all(bind=session.get_bind())
+                    repo = SettingsRepository(session)
+                    repo.initialize_defaults()
+                    enabled_list = repo.get('enabled_strategies', default=None)
+                    min_confidence = repo.get('min_confidence', default=None)
+                    min_rr_ratio = repo.get('min_rr_ratio', default=None)
+
+                if enabled_list is not None:
+                    for name in strategy.rules_enabled:
+                        strategy.set_rule_enabled(name, name in enabled_list)
+                if min_confidence is not None:
+                    validator.min_confidence = min_confidence
+                if min_rr_ratio is not None:
+                    validator.min_rr_ratio = min_rr_ratio
+
+                effective = [name for name, on in strategy.rules_enabled.items() if on]
+                logger.info(
+                    f"   [{self.timeframe}] Settings refreshed — enabled rules: {effective}, "
+                    f"min_confidence={validator.min_confidence}, min_rr_ratio={validator.min_rr_ratio}"
+                )
+
             # GoldStrategy.evaluate() refuses to evaluate any rule until
             # current_idx >= max(config['trend_lookback'], 60) (silently
             # returns None, no log, no exception). The data feed/generator
@@ -218,8 +251,10 @@ class TimeframeWorker:
                 expiry_hours=expiry_hours,
             )
 
-            # Create validator
-            validator = SignalValidator(min_rr_ratio=1.5)
+            # Create validator. min_rr_ratio/min_confidence are seeded with
+            # the settings' own defaults and immediately overwritten by
+            # refresh_settings() on the first pre_run_hook call below.
+            validator = SignalValidator(min_rr_ratio=1.5, min_confidence=0.0)
 
             # Create generator
             self.generator = RealtimeSignalGenerator(
@@ -227,7 +262,8 @@ class TimeframeWorker:
                 strategy=strategy,
                 validator=validator,
                 outcome_tracker=outcome_tracker,
-                lookback_periods=lookback_periods
+                lookback_periods=lookback_periods,
+                pre_run_hook=refresh_settings
             )
 
             # Add SHARED deduplication subscriber (same instance across ALL workers)
@@ -327,7 +363,7 @@ class MultiTimeframeService:
         # Create SHARED deduplication subscriber (ONE instance for ALL timeframes)
         # DATABASE-BACKED: Loads recent signals from DB on startup to prevent duplicates after restart
         db_subscriber = DatabaseSubscriber(database_url=self.database_url)
-        telegram_subscriber = TelegramSubscriber()
+        telegram_subscriber = TelegramSubscriber(database_url=self.database_url)
         self.telegram_subscriber = telegram_subscriber  # kept for weekly reports
 
         self.shared_dedup_subscriber = DeduplicationSubscriber(

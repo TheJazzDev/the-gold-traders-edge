@@ -123,10 +123,12 @@ class SignalValidator:
     def __init__(
         self,
         min_rr_ratio: float = 1.5,
+        min_confidence: float = 0.0,
         max_entry_deviation: float = 0.05,  # 5%
         duplicate_window_hours: int = 4
     ):
         self.min_rr_ratio = min_rr_ratio
+        self.min_confidence = min_confidence
         self.max_entry_deviation = max_entry_deviation
         self.duplicate_window_hours = duplicate_window_hours
         self.recent_signals: List[ValidatedSignal] = []
@@ -179,6 +181,13 @@ class SignalValidator:
         # Check basic validity
         if not self._is_valid_signal(signal):
             logger.warning(f"Invalid signal structure: {signal}")
+            return None
+
+        if signal.confidence < self.min_confidence:
+            logger.info(
+                f"Confidence {signal.confidence:.0%} below minimum "
+                f"{self.min_confidence:.0%}. Rejecting signal."
+            )
             return None
 
         # Calculate risk metrics
@@ -305,6 +314,7 @@ class RealtimeSignalGenerator:
         validator: Optional[SignalValidator] = None,
         lookback_periods: int = 200,
         outcome_tracker: Optional["SignalOutcomeTracker"] = None,
+        pre_run_hook: Optional[Callable[[], None]] = None,
     ):
         """
         Initialize signal generator.
@@ -314,10 +324,15 @@ class RealtimeSignalGenerator:
             strategy: Trading strategy (default: GoldStrategy with momentum only)
             validator: Signal validator (default: SignalValidator)
             lookback_periods: Number of candles to fetch for indicators
+            pre_run_hook: Optional callback invoked before each candle-close
+                iteration in `start()`, e.g. to re-read enabled rules /
+                thresholds from a settings store so they take effect without
+                a restart.
         """
         self.data_feed = data_feed
         self.lookback_periods = lookback_periods
         self.outcome_tracker = outcome_tracker
+        self.pre_run_hook = pre_run_hook
 
         # Initialize strategy (Momentum Equilibrium only by default)
         if strategy is None:
@@ -485,6 +500,12 @@ class RealtimeSignalGenerator:
                     break
 
                 iteration += 1
+
+                if self.pre_run_hook:
+                    try:
+                        self.pre_run_hook()
+                    except Exception as e:
+                        logger.error(f"pre_run_hook failed: {e}", exc_info=True)
 
                 # Run signal generation
                 self.run_once()

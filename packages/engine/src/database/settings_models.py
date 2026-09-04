@@ -119,11 +119,14 @@ DEFAULT_SETTINGS = [
     {
         'key': 'enabled_timeframes',
         'category': SettingCategory.TRADING,
-        'value': '["5m", "15m", "30m", "1h", "4h", "1d"]',
+        # Only 1h is validated/tuned and actually started by the worker
+        # (see TIMEFRAMES in run_multi_timeframe_service.py). This setting
+        # is informational only — changing it does not start/stop workers.
+        'value': '["1h"]',
         'value_type': 'json',
-        'default_value': '["5m", "15m", "30m", "1h", "4h", "1d"]',
-        'description': 'Timeframes to monitor for signals',
-        'editable': True,
+        'default_value': '["1h"]',
+        'description': 'Timeframes actually monitored for signals (read-only reflection of TIMEFRAMES in the worker)',
+        'editable': False,
         'requires_restart': True,
     },
 
@@ -199,9 +202,9 @@ DEFAULT_SETTINGS = [
         'value': '["momentum_equilibrium", "london_session_breakout", "golden_fibonacci", "ath_retest", "order_block_retest"]',
         'value_type': 'json',
         'default_value': '["momentum_equilibrium", "london_session_breakout", "golden_fibonacci", "ath_retest", "order_block_retest"]',
-        'description': 'List of enabled trading strategies',
+        'description': 'List of enabled trading strategies (applied live, on the next candle close — no restart needed)',
         'editable': True,
-        'requires_restart': True,
+        'requires_restart': False,
     },
     {
         'key': 'min_rr_ratio',
@@ -246,10 +249,14 @@ DEFAULT_SETTINGS = [
     {
         'key': 'telegram_enabled',
         'category': SettingCategory.NOTIFICATIONS,
-        'value': 'false',
+        # Telegram has been the only channel actually notifying the user of
+        # live signals; default to on so this setting (now actually
+        # enforced — see TelegramSubscriber._enabled_in_settings) doesn't
+        # silently go dark on a fresh DB.
+        'value': 'true',
         'value_type': 'bool',
-        'default_value': 'false',
-        'description': 'Enable Telegram notifications for signals',
+        'default_value': 'true',
+        'description': 'Enable Telegram notifications for signals (now actually enforced, not just a label)',
         'editable': True,
         'requires_restart': False,
     },

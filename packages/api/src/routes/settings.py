@@ -9,11 +9,13 @@ from fastapi import APIRouter, HTTPException, Depends
 from pydantic import BaseModel, Field
 from typing import List, Optional, Any, Dict
 from enum import Enum
+import json
 import sys
 from pathlib import Path
 
 # Add engine to path for imports
-sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent / 'engine' / 'src'))
+ENGINE_DIR = Path(__file__).parent.parent.parent.parent / 'engine'
+sys.path.insert(0, str(ENGINE_DIR / 'src'))
 
 from database.connection import get_db
 from database.settings_models import Setting, SettingCategory
@@ -21,6 +23,20 @@ from database.settings_repository import SettingsRepository
 from sqlalchemy.orm import Session
 
 router = APIRouter(prefix="/v1/settings", tags=["settings"])
+
+# Canonical rule keys (must match GoldStrategy.rules_enabled) with display
+# names, in the order they're evaluated.
+STRATEGY_DISPLAY_NAMES = {
+    'momentum_equilibrium': 'Momentum Equilibrium',
+    'london_session_breakout': 'London Session Breakout',
+    'golden_fibonacci': 'Golden Fibonacci',
+    'ath_retest': 'ATH Retest',
+    'order_block_retest': 'Order Block Retest',
+}
+
+# Only 1h is currently tuned/validated and actually running live — see
+# TIMEFRAMES in run_multi_timeframe_service.py.
+LIVE_TIMEFRAME = '1h'
 
 
 # ==================== PYDANTIC MODELS ====================
@@ -153,6 +169,44 @@ async def get_settings_by_category(db: Session = Depends(get_db)):
             ))
 
     return result
+
+
+@router.get("/strategies")
+async def get_strategies(db: Session = Depends(get_db)):
+    """
+    List every strategy rule with its live enabled/disabled state (from the
+    `enabled_strategies` setting, which the engine now actually reads on
+    every candle close) alongside its real validated performance on the
+    live timeframe, so enabling a rule is an informed choice rather than a
+    silent one — several rules are unprofitable under the live config even
+    though they were profitable in isolation during tuning.
+
+    Declared above GET /{key} so it isn't swallowed by that catch-all route.
+    """
+    repo = SettingsRepository(db)
+    enabled = set(repo.get('enabled_strategies', default=[]) or [])
+
+    validation: Dict[str, Any] = {}
+    tuned_config_path = ENGINE_DIR / 'tuned_configs' / f'{LIVE_TIMEFRAME}.json'
+    if tuned_config_path.exists():
+        with open(tuned_config_path) as f:
+            tuned = json.load(f)
+        validation = tuned.get('final_shared_config_validation', {})
+
+    return [
+        {
+            "key": key,
+            "name": STRATEGY_DISPLAY_NAMES.get(key, key),
+            "enabled": key in enabled,
+            "timeframe": LIVE_TIMEFRAME,
+            "validated": key in validation,
+            "profit_factor": validation.get(key, {}).get('profit_factor'),
+            "win_rate": validation.get(key, {}).get('win_rate'),
+            "total_trades": validation.get(key, {}).get('total_trades'),
+            "net_profit_pct": validation.get(key, {}).get('net_profit_pct'),
+        }
+        for key in STRATEGY_DISPLAY_NAMES
+    ]
 
 
 @router.get("/{key}", response_model=SettingResponse)
@@ -390,8 +444,8 @@ async def get_service_status(db: Session = Depends(get_db)):
         "dry_run_mode": repo.get("dry_run_mode", False),
         "max_risk_per_trade": repo.get("max_risk_per_trade", 1.0),
         "max_positions": repo.get("max_positions", 5),
-        "enabled_timeframes": repo.get("enabled_timeframes", []),
+        "enabled_timeframes": repo.get("enabled_timeframes", [LIVE_TIMEFRAME]),
         "enabled_strategies": repo.get("enabled_strategies", []),
-        "data_feed_type": repo.get("data_feed_type", "metaapi"),
-        "active_timeframes": repo.get("enabled_timeframes", ["5m", "15m", "30m", "1h", "4h", "1d"]),
+        "data_feed_type": repo.get("data_feed_type", "yahoo"),
+        "active_timeframes": repo.get("enabled_timeframes", [LIVE_TIMEFRAME]),
     }

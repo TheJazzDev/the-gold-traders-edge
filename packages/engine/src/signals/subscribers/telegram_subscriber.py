@@ -42,7 +42,12 @@ class TelegramSubscriber:
     - Non-blocking: doesn't fail if Telegram is unavailable
     """
 
-    def __init__(self, bot_token: Optional[str] = None, chat_id: Optional[str] = None):
+    def __init__(
+        self,
+        bot_token: Optional[str] = None,
+        chat_id: Optional[str] = None,
+        database_url: Optional[str] = None,
+    ):
         """
         Initialize Telegram subscriber.
 
@@ -50,6 +55,11 @@ class TelegramSubscriber:
             bot_token: Telegram Bot API token (from @BotFather)
             chat_id: Telegram chat/channel ID to send messages to
                     (can be user ID, group ID, or @channel_username)
+            database_url: If given, the `telegram_enabled` setting is
+                checked before every send, so it can be flipped off from the
+                admin UI without a redeploy. Without it (or on any DB error)
+                sending fails open, since a DB hiccup should not silently
+                blackhole trading alerts.
 
         Environment Variables (if args not provided):
             TELEGRAM_BOT_TOKEN: Bot token
@@ -58,6 +68,7 @@ class TelegramSubscriber:
         # Get credentials from args or environment
         self.bot_token = bot_token or os.getenv("TELEGRAM_BOT_TOKEN")
         self.chat_id = chat_id or os.getenv("TELEGRAM_CHAT_ID")
+        self.database_url = database_url
 
         # Validate configuration
         if not self.bot_token or not self.chat_id:
@@ -72,6 +83,25 @@ class TelegramSubscriber:
 
         # Telegram API base URL
         self.api_url = f"https://api.telegram.org/bot{self.bot_token}/sendMessage"
+
+    def _enabled_in_settings(self) -> bool:
+        """Check the `telegram_enabled` setting. Fails open on any error."""
+        if not self.database_url:
+            return True
+        try:
+            from database.connection import DatabaseManager
+            from database.models import Base
+            from database.settings_repository import SettingsRepository
+
+            db_manager = DatabaseManager(self.database_url)
+            with db_manager.session_scope() as session:
+                Base.metadata.create_all(bind=session.get_bind())
+                repo = SettingsRepository(session)
+                repo.initialize_defaults()
+                return bool(repo.get('telegram_enabled', default=True))
+        except Exception as e:
+            logger.debug(f"Could not check telegram_enabled setting, defaulting to enabled: {e}")
+            return True
 
     def __call__(self, signal):
         """
@@ -103,6 +133,10 @@ class TelegramSubscriber:
             True if sent successfully, False otherwise
         """
         if not self.enabled:
+            return False
+
+        if not self._enabled_in_settings():
+            logger.info("Telegram disabled via settings - skipping signal")
             return False
 
         if requests is None:
@@ -200,6 +234,10 @@ class TelegramSubscriber:
             True if sent successfully, False otherwise
         """
         if not self.enabled:
+            return False
+
+        if not self._enabled_in_settings():
+            logger.info("Telegram disabled via settings - skipping message")
             return False
 
         if requests is None:
