@@ -265,7 +265,7 @@ export default function ControlsPage() {
           <Card className="bg-white/5 border-white/10 backdrop-blur-xl lg:col-span-2">
             <div className="flex items-center justify-between mb-4">
               <h2 className="text-base sm:text-xl font-bold text-white">Recent Signals</h2>
-              <Link href="/signals">
+              <Link href="/#signals">
                 <Button variant="outline" size="sm" className="border-white/20 text-white hover:bg-white/10">
                   View All
                 </Button>
