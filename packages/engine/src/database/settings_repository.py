@@ -20,10 +20,23 @@ class SettingsRepository:
         self.session = session
         self._cache: Dict[str, Setting] = {}
 
+    # Metadata columns that describe what a setting IS, as opposed to its
+    # current value — these belong to the code, not the database. A setting
+    # whose meaning or semantics changed in code (e.g. a toggle that used to
+    # require a restart and no longer does) should reflect that on every
+    # existing row, not just on freshly-seeded ones.
+    _METADATA_FIELDS = [
+        'category', 'value_type', 'default_value', 'description',
+        'unit', 'min_value', 'max_value', 'editable', 'requires_restart',
+    ]
+
     def initialize_defaults(self):
         """
-        Initialize default settings if they don't exist.
-        Called on application startup.
+        Insert any settings from DEFAULT_SETTINGS that don't exist yet, and
+        sync metadata (description/editable/requires_restart/min/max/etc,
+        but never the user-set `value`) on existing rows so code-side
+        changes to what a setting means always take effect — not just for
+        brand-new databases. Called on application startup.
         """
         for setting_data in DEFAULT_SETTINGS:
             existing = self.session.query(Setting).filter_by(key=setting_data['key']).first()
@@ -32,6 +45,16 @@ class SettingsRepository:
                 setting = Setting(**setting_data)
                 self.session.add(setting)
                 logger.info(f"Initialized setting: {setting_data['key']} = {setting_data['value']}")
+                continue
+
+            changed = []
+            for field in self._METADATA_FIELDS:
+                new_value = setting_data.get(field)
+                if getattr(existing, field) != new_value:
+                    setattr(existing, field, new_value)
+                    changed.append(field)
+            if changed:
+                logger.info(f"Synced metadata for setting '{setting_data['key']}': {changed}")
 
         self.session.commit()
         logger.info(f"✅ Settings initialized ({len(DEFAULT_SETTINGS)} total)")
