@@ -167,19 +167,11 @@ class TimeframeWorker:
         try:
             logger.info(f"🚀 Initializing {self.timeframe} generator...")
 
-            # Create data feed (use setting or environment variable)
-            datafeed_type = os.getenv('DATA_FEED_TYPE', 'yahoo')  # Default to yahoo for backward compatibility
-            logger.info(f"   [{self.timeframe}] Using data feed: {datafeed_type}")
-
-            data_feed = create_datafeed(
-                feed_type=datafeed_type,
-                symbol='XAUUSD',
-                timeframe=self.timeframe
-            )
-
             # Load the tuned config for this timeframe if one exists;
             # otherwise fall back to defaults (no other timeframe has a
-            # tuned config yet — see TIMEFRAMES above).
+            # tuned config yet — see TIMEFRAMES above). Done before creating
+            # the data feed/generator because both need lookback_periods
+            # derived from the config actually in use (see below).
             tuned_config_path = Path(__file__).parent / 'tuned_configs' / f'{self.timeframe}.json'
             if tuned_config_path.exists():
                 with open(tuned_config_path) as f:
@@ -197,6 +189,28 @@ class TimeframeWorker:
             enabled_names = [name for name, on in strategy.rules_enabled.items() if on]
             logger.info(f"   [{self.timeframe}] Enabled rules: {enabled_names}")
 
+            # GoldStrategy.evaluate() refuses to evaluate any rule until
+            # current_idx >= max(config['trend_lookback'], 60) (silently
+            # returns None, no log, no exception). The data feed/generator
+            # both default lookback_periods to 200 candles, which is a
+            # no-op with the untuned default config (trend_lookback=50) but
+            # is exactly equal to the 1h tuned config's trend_lookback=200 —
+            # current_idx then maxes out at 199, permanently below the gate,
+            # so no signal could ever fire. Size the fetch comfortably above
+            # whatever the active config actually requires.
+            lookback_periods = max(200, strategy.config['trend_lookback'] + 50)
+
+            # Create data feed (use setting or environment variable)
+            datafeed_type = os.getenv('DATA_FEED_TYPE', 'yahoo')  # Default to yahoo for backward compatibility
+            logger.info(f"   [{self.timeframe}] Using data feed: {datafeed_type} (lookback_periods={lookback_periods})")
+
+            data_feed = create_datafeed(
+                feed_type=datafeed_type,
+                symbol='XAUUSD',
+                timeframe=self.timeframe,
+                lookback_periods=lookback_periods
+            )
+
             outcome_tracker = SignalOutcomeTracker(
                 database_url=self.database_url,
                 symbol='XAUUSD',
@@ -212,7 +226,8 @@ class TimeframeWorker:
                 data_feed=data_feed,
                 strategy=strategy,
                 validator=validator,
-                outcome_tracker=outcome_tracker
+                outcome_tracker=outcome_tracker,
+                lookback_periods=lookback_periods
             )
 
             # Add SHARED deduplication subscriber (same instance across ALL workers)
