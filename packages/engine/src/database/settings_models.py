@@ -325,4 +325,14 @@ DEFAULT_SETTINGS = [
         'editable': True,
         'requires_restart': True,
     },
+    {
+        'key': 'weekly_report_last_sent_at',
+        'category': SettingCategory.SYSTEM,
+        'value': '',
+        'value_type': 'string',
+        'default_value': '',
+        'description': 'Internal: ISO timestamp of when the weekly Telegram performance report was last sent. Persisted so the schedule survives service restarts.',
+        'editable': False,
+        'requires_restart': False,
+    },
 ]

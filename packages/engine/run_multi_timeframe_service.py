@@ -21,7 +21,7 @@ import logging
 import threading
 import time
 from datetime import datetime
-from typing import List, Dict
+from typing import List, Dict, Optional
 
 # Add src to path
 sys.path.insert(0, str(Path(__file__).parent / 'src'))
@@ -39,7 +39,9 @@ from trading.mt5_config import MT5Config
 from trading.mt5_connection import create_mt5_connection
 from trading.risk_manager import RiskManager
 from database.connection import DatabaseManager
+from database.models import Base
 from database.signal_repository import SignalRepository
+from database.settings_repository import SettingsRepository
 from report import build_report_text
 
 # Configure logging
@@ -389,7 +391,7 @@ class MultiTimeframeService:
         """
         last_status_time = datetime.now()
         last_keepalive_time = datetime.now()
-        last_report_time = datetime.now()
+        last_report_time = self._load_last_report_time()
         status_interval = 300  # 5 minutes
         keepalive_interval = 240  # 4 minutes (ping API to keep it awake)
         report_interval = 7 * 24 * 3600  # weekly
@@ -397,9 +399,10 @@ class MultiTimeframeService:
         while self.is_running:
             time.sleep(10)  # Check every 10 seconds
 
-            if (datetime.now() - last_report_time).total_seconds() >= report_interval:
+            if last_report_time is None or (datetime.now() - last_report_time).total_seconds() >= report_interval:
                 self._send_weekly_report()
                 last_report_time = datetime.now()
+                self._save_last_report_time(last_report_time)
 
             # Check if any workers have died, restarting them if so
             if self.is_running:
@@ -452,6 +455,46 @@ class MultiTimeframeService:
             print(f"{timeframe:>4} | {status} | Candles: {candles:>5} | Signals: {signals:>3}")
 
         print("=" * 80 + "\n")
+
+    def _open_settings_repo(self, session) -> SettingsRepository:
+        """Ensure the settings table and its default rows exist, then return a repo bound to `session`."""
+        Base.metadata.create_all(bind=session.get_bind())
+        repo = SettingsRepository(session)
+        repo.initialize_defaults()
+        return repo
+
+    def _load_last_report_time(self) -> Optional[datetime]:
+        """
+        Load when the weekly report was last sent, persisted in the settings
+        table so the 7-day schedule survives service restarts/redeploys
+        instead of resetting to "now" every time (it used to be in-memory
+        only, so a service that never stays up for 7 straight days would
+        never send a report).
+
+        Returns None if it has never been sent (or on any DB error), which
+        the caller treats as "send one now".
+        """
+        try:
+            db_manager = DatabaseManager(self.database_url)
+            with db_manager.session_scope() as session:
+                repo = self._open_settings_repo(session)
+                raw = repo.get('weekly_report_last_sent_at', default='')
+            return datetime.fromisoformat(raw) if raw else None
+        except Exception as e:
+            logger.error(f"Failed to load last weekly report time: {e}", exc_info=True)
+            return None
+
+    def _save_last_report_time(self, when: datetime):
+        """Persist when the weekly report was last sent (see _load_last_report_time)."""
+        try:
+            db_manager = DatabaseManager(self.database_url)
+            with db_manager.session_scope() as session:
+                repo = self._open_settings_repo(session)
+                setting = repo.get_setting('weekly_report_last_sent_at')
+                if setting:
+                    setting.value = when.isoformat()
+        except Exception as e:
+            logger.error(f"Failed to persist last weekly report time: {e}", exc_info=True)
 
     def _send_weekly_report(self):
         """Send the last 7 days of signal performance stats to Telegram."""
