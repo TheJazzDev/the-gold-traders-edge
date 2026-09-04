@@ -1,5 +1,7 @@
 """Signals API Routes"""
 
+import os
+import re
 import sys
 from pathlib import Path
 from datetime import datetime, timedelta
@@ -26,6 +28,15 @@ from src.models.signal import (
 from src.database import get_db
 
 router = APIRouter(prefix="/v1/signals", tags=["signals"])
+
+
+def _parse_timeframe_hours(timeframe: str) -> float:
+    """Parse a timeframe string like '1h', '4H', '15m' into hours. Falls back to 1h."""
+    match = re.match(r"(\d+)\s*([hHmM])", timeframe or "")
+    if not match:
+        return 1.0
+    value, unit = int(match.group(1)), match.group(2).lower()
+    return value / 60 if unit == "m" else float(value)
 
 
 @router.get("/history")
@@ -428,14 +439,19 @@ async def get_service_status(db: Session = Depends(get_db)):
     # Get latest signal to check if service is running
     latest_signal = db.query(Signal).order_by(desc(Signal.created_at)).first()
 
-    # Check if service has run recently (within last 5 hours for 4H timeframe)
+    # Timeframe actually in use, from the most recent signal (falls back to the
+    # TIMEFRAME env var, then "1h", if no signals exist yet)
+    timeframe = (latest_signal.timeframe if latest_signal else None) or os.getenv("TIMEFRAME", "1h")
+    timeframe_hours = _parse_timeframe_hours(timeframe)
+
+    # Check if service has run recently (within 5 candles' worth of time)
     is_running = False
     last_candle_time = None
 
     if latest_signal:
         last_candle_time = latest_signal.created_at
         time_since_last = datetime.now() - last_candle_time
-        is_running = time_since_last.total_seconds() < (5 * 3600)  # 5 hours
+        is_running = time_since_last.total_seconds() < (5 * timeframe_hours * 3600)
 
     # Count signals
     total_signals = db.query(Signal).count()
@@ -443,12 +459,11 @@ async def get_service_status(db: Session = Depends(get_db)):
     # Calculate signal rate
     signal_rate = None
     if total_signals > 0:
-        # Assume 4H timeframe, estimate candles processed
         first_signal = db.query(Signal).order_by(Signal.created_at).first()
         if first_signal:
             time_span = datetime.now() - first_signal.created_at
             hours = time_span.total_seconds() / 3600
-            estimated_candles = int(hours / 4)  # 4H timeframe
+            estimated_candles = int(hours / timeframe_hours)
             if estimated_candles > 0:
                 signal_rate = (total_signals / estimated_candles) * 100
 
@@ -463,15 +478,14 @@ async def get_service_status(db: Session = Depends(get_db)):
     except:
         pass
 
-    # Calculate next candle time (4H intervals: 00:00, 04:00, 08:00, 12:00, 16:00, 20:00 UTC)
+    # Calculate next candle time from the actual timeframe interval (works for
+    # sub-hourly timeframes like 15m too, unlike hour-of-day snapping)
     now = datetime.now()
-    current_hour = now.hour
-    next_close_hour = ((current_hour // 4) + 1) * 4
-
-    if next_close_hour >= 24:
-        next_candle_time = now.replace(hour=0, minute=0, second=0, microsecond=0) + timedelta(days=1)
-    else:
-        next_candle_time = now.replace(hour=next_close_hour, minute=0, second=0, microsecond=0)
+    timeframe_minutes = max(1, round(timeframe_hours * 60))
+    midnight = now.replace(hour=0, minute=0, second=0, microsecond=0)
+    minutes_since_midnight = (now - midnight).total_seconds() / 60
+    next_boundary_minutes = (int(minutes_since_midnight // timeframe_minutes) + 1) * timeframe_minutes
+    next_candle_time = midnight + timedelta(minutes=next_boundary_minutes)
 
     return ServiceStatus(
         status="running" if is_running else "stopped",
@@ -483,5 +497,5 @@ async def get_service_status(db: Session = Depends(get_db)):
         current_price=current_price,
         datafeed_type="yahoo",
         symbol="XAUUSD",
-        timeframe="4H"
+        timeframe=timeframe.upper()
     )
