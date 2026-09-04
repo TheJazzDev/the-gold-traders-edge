@@ -15,6 +15,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 from database.models import Signal, SignalDirection, SignalStatus, init_database
 from database.connection import DatabaseManager
 from database.signal_repository import SignalRepository
+from database.reference_id import generate_reference_id
 
 logger = logging.getLogger(__name__)
 
@@ -113,11 +114,20 @@ class DatabaseSubscriber:
 
         # Save to database using repository
         with self.db_manager.session_scope() as session:
+            signal.reference_id = generate_reference_id(
+                session, validated_signal.strategy_name, validated_signal.timestamp
+            )
+
             repository = SignalRepository(session)
             saved_signal = repository.create(signal)
 
+            # Mutate the shared ValidatedSignal in place so subscribers
+            # called after this one (Telegram) can include the reference ID
+            # in the initial signal message too, not just on close.
+            validated_signal.reference_id = saved_signal.reference_id
+
             logger.info(
-                f"💾 Signal saved to database: ID={saved_signal.id}, "
+                f"💾 Signal saved to database: {saved_signal.reference_id} (id={saved_signal.id}), "
                 f"{validated_signal.direction} @ ${validated_signal.entry_price:.2f}"
             )
 

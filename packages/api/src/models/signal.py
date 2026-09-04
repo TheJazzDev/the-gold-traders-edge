@@ -8,6 +8,7 @@ from pydantic import BaseModel, Field
 class SignalResponse(BaseModel):
     """Single signal response model"""
     id: int
+    reference_id: Optional[str] = None  # e.g. "OBR-0904-01"; null for signals created before this existed
     timestamp: datetime
     symbol: str
     timeframe: str

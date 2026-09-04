@@ -88,6 +88,7 @@ async def get_signals_history(
         "signals": [
             {
                 "id": s.id,
+                "reference_id": s.reference_id,
                 "timestamp": s.timestamp.isoformat() if s.timestamp else None,
                 "symbol": s.symbol,
                 "timeframe": s.timeframe,
@@ -167,6 +168,7 @@ async def get_signals(
     for signal in signals:
         signal_responses.append(SignalResponse(
             id=signal.id,
+            reference_id=signal.reference_id,
             timestamp=signal.timestamp,
             symbol=signal.symbol,
             timeframe=signal.timeframe,
@@ -221,6 +223,7 @@ async def get_signal(signal_id: int, db: Session = Depends(get_db)):
 
     return SignalResponse(
         id=signal.id,
+        reference_id=signal.reference_id,
         timestamp=signal.timestamp,
         symbol=signal.symbol,
         timeframe=signal.timeframe,

@@ -84,8 +84,9 @@ class TelegramSubscriber:
         # Telegram API base URL
         self.api_url = f"https://api.telegram.org/bot{self.bot_token}/sendMessage"
 
-    def _enabled_in_settings(self) -> bool:
-        """Check the `telegram_enabled` setting. Fails open on any error."""
+    def _enabled_in_settings(self, key: str = 'telegram_enabled', default: bool = True) -> bool:
+        """Check a boolean notification setting. Fails open on any error —
+        a DB hiccup should not silently blackhole trading alerts."""
         if not self.database_url:
             return True
         try:
@@ -98,10 +99,10 @@ class TelegramSubscriber:
                 Base.metadata.create_all(bind=session.get_bind())
                 repo = SettingsRepository(session)
                 repo.initialize_defaults()
-                return bool(repo.get('telegram_enabled', default=True))
+                return bool(repo.get(key, default=default))
         except Exception as e:
-            logger.debug(f"Could not check telegram_enabled setting, defaulting to enabled: {e}")
-            return True
+            logger.debug(f"Could not check {key} setting, defaulting to {default}: {e}")
+            return default
 
     def __call__(self, signal):
         """
@@ -174,6 +175,68 @@ class TelegramSubscriber:
             logger.error(f"Failed to send Telegram message: {e}")
             return False
 
+    def send_close_notification(
+        self,
+        *,
+        reference_id: Optional[str],
+        symbol: str,
+        direction: str,
+        strategy_name: str,
+        entry_price: float,
+        exit_price: Optional[float],
+        outcome: str,
+        r_multiple: Optional[float],
+    ) -> bool:
+        """
+        Notify Telegram that a signal resolved (TP hit, SL hit, or expired
+        with no resolution). Previously nothing sent a message when a
+        signal closed — only creation did — so a signal could sit "live"
+        in the UI for hours with no way to tell from Telegram whether it
+        had actually resolved.
+
+        Args:
+            outcome: "closed_tp", "closed_sl", or "expired"
+            r_multiple: pnl_pips / risk_pips, or None for an expiry
+
+        Returns:
+            True if sent successfully, False otherwise (including when
+            disabled by settings)
+        """
+        if not self.enabled:
+            return False
+
+        if not self._enabled_in_settings('telegram_enabled'):
+            logger.info("Telegram disabled via settings - skipping close notification")
+            return False
+
+        if not self._enabled_in_settings('notify_on_trade_close', default=True):
+            logger.debug("notify_on_trade_close disabled - skipping close notification")
+            return False
+
+        label = reference_id or "this signal"
+
+        if outcome == "closed_tp":
+            headline = f"✅ <b>TAKE PROFIT HIT</b> — {label}"
+        elif outcome == "closed_sl":
+            headline = f"❌ <b>STOP LOSS HIT</b> — {label}"
+        else:
+            headline = f"⌛ <b>EXPIRED (no resolution)</b> — {label}"
+
+        result_line = f"Result: {r_multiple:+.2f}R" if r_multiple is not None else ""
+        exit_line = f"├ Exit: ${exit_price:.2f}\n" if exit_price is not None else ""
+
+        message = f"""
+{headline}
+
+<b>Symbol:</b> {symbol} {direction}
+<b>Strategy:</b> {strategy_name}
+
+├ Entry: ${entry_price:.2f}
+{exit_line}{result_line}
+""".strip()
+
+        return self.send_custom_message(message)
+
     def _format_signal_message(self, signal) -> str:
         """
         Format signal as a pretty Telegram message with HTML formatting.
@@ -198,11 +261,13 @@ class TelegramSubscriber:
         # Format timestamp
         time_str = signal.timestamp.strftime("%Y-%m-%d %H:%M UTC")
 
+        id_line = f"<b>ID:</b> {signal.reference_id}\n" if getattr(signal, 'reference_id', None) else ""
+
         # Build message
         message = f"""
 {direction_emoji} <b>NEW {signal.direction} SIGNAL</b> {arrow}
 
-<b>Symbol:</b> {signal.symbol}
+{id_line}<b>Symbol:</b> {signal.symbol}
 <b>Strategy:</b> {signal.strategy_name}
 <b>Timeframe:</b> {signal.timeframe}
 <b>Time:</b> {time_str}

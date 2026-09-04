@@ -30,6 +30,7 @@ def make_worker(tmp_path, timeframe="1h"):
     worker.timeframe = timeframe
     worker.database_url = f"sqlite:///{tmp_path / 'settings.db'}"
     worker.shared_dedup_subscriber = MagicMock()
+    worker.telegram_subscriber = MagicMock()
     worker.enable_trading = False
     worker.mt5_config = None
     return worker

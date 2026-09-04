@@ -2,7 +2,7 @@
 Database models for trading signals and performance tracking.
 """
 
-from sqlalchemy import Column, Integer, String, Float, DateTime, Enum, Text, create_engine
+from sqlalchemy import Column, Integer, String, Float, DateTime, Enum, Text, create_engine, inspect, text
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.sql import func
 from datetime import datetime
@@ -37,6 +37,12 @@ class Signal(Base):
 
     # Primary key
     id = Column(Integer, primary_key=True, autoincrement=True)
+
+    # Human-readable reference (e.g. "OBR-0904-01") — see database/reference_id.py.
+    # Nullable: signals created before this column existed have none, and
+    # ensure_signal_reference_id_column() adds this column to an
+    # already-running database without backfilling old rows.
+    reference_id = Column(String(30), unique=True, index=True, nullable=True)
 
     # Signal metadata
     timestamp = Column(DateTime, nullable=False, index=True)
@@ -138,7 +144,27 @@ def init_database(database_url: str = "sqlite:///signals.db"):
     """
     engine = create_engine(database_url, echo=False)
     Base.metadata.create_all(engine)
+    ensure_signal_reference_id_column(engine)
     return engine
+
+
+def ensure_signal_reference_id_column(engine):
+    """
+    Base.metadata.create_all() only creates tables that don't exist yet — it
+    never alters an existing table's columns. There's no active migration
+    runner in this codebase (the alembic/ scaffolding isn't invoked anywhere
+    in the deploy path), so adding a column to the already-running
+    production `signals` table needs this idempotent check-and-alter
+    instead, run every time the schema is initialized.
+    """
+    inspector = inspect(engine)
+    if 'signals' not in inspector.get_table_names():
+        return
+    columns = {c['name'] for c in inspector.get_columns('signals')}
+    if 'reference_id' in columns:
+        return
+    with engine.begin() as conn:
+        conn.execute(text('ALTER TABLE signals ADD COLUMN reference_id VARCHAR(30)'))
 
 
 if __name__ == "__main__":

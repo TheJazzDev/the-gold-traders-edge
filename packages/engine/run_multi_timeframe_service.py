@@ -82,6 +82,7 @@ class TimeframeWorker:
         timeframe: str,
         database_url: str,
         shared_dedup_subscriber,  # SHARED across all workers
+        telegram_subscriber=None,
         enable_trading: bool = False,
         mt5_config: MT5Config = None
     ):
@@ -92,12 +93,16 @@ class TimeframeWorker:
             timeframe: Timeframe to monitor (e.g., '5m', '1h', '4h')
             database_url: Database connection URL
             shared_dedup_subscriber: Shared deduplication subscriber (same instance for all workers)
+            telegram_subscriber: Shared Telegram subscriber, used here to notify on
+                signal close (TP/SL/expiry) — separate from its role inside
+                shared_dedup_subscriber, which notifies on signal creation
             enable_trading: Whether to enable auto-trading via MT5Subscriber
             mt5_config: MT5 configuration (required if enable_trading=True)
         """
         self.timeframe = timeframe
         self.database_url = database_url
         self.shared_dedup_subscriber = shared_dedup_subscriber
+        self.telegram_subscriber = telegram_subscriber
         self.enable_trading = enable_trading
         self.mt5_config = mt5_config
         self.is_running = False
@@ -249,6 +254,7 @@ class TimeframeWorker:
                 symbol='XAUUSD',
                 timeframe=self.timeframe,
                 expiry_hours=expiry_hours,
+                telegram_subscriber=self.telegram_subscriber,
             )
 
             # Create validator. min_rr_ratio/min_confidence are seeded with
@@ -408,6 +414,7 @@ class MultiTimeframeService:
                 timeframe=timeframe,
                 database_url=self.database_url,
                 shared_dedup_subscriber=self.shared_dedup_subscriber,  # SHARE the same instance
+                telegram_subscriber=self.telegram_subscriber,
                 enable_trading=self.enable_trading,
                 mt5_config=self.mt5_config
             )

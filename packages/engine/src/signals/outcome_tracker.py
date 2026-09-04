@@ -7,11 +7,15 @@ exactly (stop-loss checked before take-profit when both would be hit by the
 same candle) so live outcome tracking stays consistent with the validated
 backtest numbers.
 """
+import logging
 from dataclasses import dataclass
 from datetime import datetime
 from enum import Enum
+from typing import Optional
 
 import pandas as pd
+
+logger = logging.getLogger(__name__)
 
 
 class OutcomeAction(Enum):
@@ -81,11 +85,43 @@ class SignalOutcomeTracker:
     too long. Meant to be called once per candle from the live signal loop.
     """
 
-    def __init__(self, database_url: str, symbol: str, timeframe: str, expiry_hours: float):
+    def __init__(
+        self,
+        database_url: str,
+        symbol: str,
+        timeframe: str,
+        expiry_hours: float,
+        telegram_subscriber: Optional["object"] = None,
+    ):
         self.db_manager = DatabaseManager(database_url)
         self.symbol = symbol
         self.timeframe = timeframe
         self.expiry_hours = expiry_hours
+        self.telegram_subscriber = telegram_subscriber
+
+    def _notify_close(self, signal, outcome: str) -> None:
+        """Best-effort close notification — never let a Telegram failure
+        affect outcome tracking itself."""
+        if self.telegram_subscriber is None:
+            return
+        r_multiple = (
+            signal.pnl_pips / signal.risk_pips
+            if signal.risk_pips and signal.pnl_pips is not None
+            else None
+        )
+        try:
+            self.telegram_subscriber.send_close_notification(
+                reference_id=signal.reference_id,
+                symbol=signal.symbol,
+                direction=signal.direction.value,
+                strategy_name=signal.strategy_name,
+                entry_price=signal.entry_price,
+                exit_price=signal.actual_exit,
+                outcome=outcome,
+                r_multiple=r_multiple,
+            )
+        except Exception:
+            logger.error("Failed to send close notification", exc_info=True)
 
     def check_candle(self, candle: pd.Series, candle_time) -> None:
         with self.db_manager.session_scope() as session:
@@ -104,18 +140,24 @@ class SignalOutcomeTracker:
                 action = evaluate_signal_outcome(signal_like, candle, candle_time, self.expiry_hours)
 
                 if action == OutcomeAction.CLOSED_TP:
-                    repo.close_open_signal(
+                    updated = repo.close_open_signal(
                         sig.id, exit_price=sig.take_profit,
                         status=SignalStatus.CLOSED_TP, closed_at=candle_time,
                     )
+                    if updated:
+                        self._notify_close(updated, "closed_tp")
                 elif action == OutcomeAction.CLOSED_SL:
-                    repo.close_open_signal(
+                    updated = repo.close_open_signal(
                         sig.id, exit_price=sig.stop_loss,
                         status=SignalStatus.CLOSED_SL, closed_at=candle_time,
                     )
+                    if updated:
+                        self._notify_close(updated, "closed_sl")
                 elif action == OutcomeAction.EXPIRED:
-                    repo.close_open_signal(
+                    updated = repo.close_open_signal(
                         sig.id, exit_price=None,
                         status=SignalStatus.CANCELLED, closed_at=candle_time,
                         note_suffix=f" [expired after {self.expiry_hours}h with no resolution]",
                     )
+                    if updated:
+                        self._notify_close(updated, "expired")

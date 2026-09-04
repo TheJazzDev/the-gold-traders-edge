@@ -71,6 +71,11 @@ class ValidatedSignal:
     notes: str
     current_price: float
 
+    # Set by DatabaseSubscriber after persisting (see database_subscriber.py)
+    # so subscribers called after it — Telegram — can include it. None if
+    # the DatabaseSubscriber hasn't run yet or failed.
+    reference_id: Optional[str] = None
+
     def to_dict(self) -> Dict:
         """Convert to dictionary for JSON serialization."""
         return asdict(self)

@@ -2,6 +2,7 @@
 import sys
 from pathlib import Path
 from datetime import datetime, timedelta
+from unittest.mock import MagicMock
 
 import pandas as pd
 import pytest
@@ -285,3 +286,91 @@ class TestMatchesBacktestEngine:
         assert tracker_result.status.value == trade.status.value
         if trade.status != TradeStatus.OPEN:
             assert tracker_result.actual_exit == trade.exit_price
+
+
+class TestCloseNotifications:
+    """
+    Previously check_candle() closed a signal with zero notification —
+    only signal creation sent a Telegram message. A resolved trade could
+    sit "closed" in the database with no way to tell from Telegram.
+    """
+
+    def test_notifies_on_take_profit(self, db_url, session_for):
+        signal = make_signal(
+            session_for, SignalDirection.LONG, entry=2000.0, sl=1990.0, tp=2030.0,
+            timestamp=datetime(2026, 1, 1, 10, 0),
+        )
+        telegram = MagicMock()
+        tracker = SignalOutcomeTracker(
+            database_url=db_url, symbol="XAUUSD", timeframe="1h", expiry_hours=48,
+            telegram_subscriber=telegram,
+        )
+        candle = pd.Series({'open': 2020.0, 'high': 2035.0, 'low': 2015.0, 'close': 2032.0})
+        tracker.check_candle(candle, candle_time=datetime(2026, 1, 1, 11, 0))
+
+        telegram.send_close_notification.assert_called_once()
+        kwargs = telegram.send_close_notification.call_args.kwargs
+        assert kwargs['outcome'] == 'closed_tp'
+        assert kwargs['exit_price'] == 2030.0
+        assert kwargs['r_multiple'] == pytest.approx(3.0)  # 300 pips / 100 pips risk
+
+    def test_notifies_on_stop_loss(self, db_url, session_for):
+        make_signal(
+            session_for, SignalDirection.LONG, entry=2000.0, sl=1990.0, tp=2030.0,
+            timestamp=datetime(2026, 1, 1, 10, 0),
+        )
+        telegram = MagicMock()
+        tracker = SignalOutcomeTracker(
+            database_url=db_url, symbol="XAUUSD", timeframe="1h", expiry_hours=48,
+            telegram_subscriber=telegram,
+        )
+        candle = pd.Series({'open': 1995.0, 'high': 1998.0, 'low': 1985.0, 'close': 1988.0})
+        tracker.check_candle(candle, candle_time=datetime(2026, 1, 1, 11, 0))
+
+        telegram.send_close_notification.assert_called_once()
+        kwargs = telegram.send_close_notification.call_args.kwargs
+        assert kwargs['outcome'] == 'closed_sl'
+        assert kwargs['r_multiple'] == pytest.approx(-1.0)
+
+    def test_notifies_on_expiry(self, db_url, session_for):
+        make_signal(
+            session_for, SignalDirection.LONG, entry=2000.0, sl=1990.0, tp=2030.0,
+            timestamp=datetime(2026, 1, 1, 10, 0),
+        )
+        telegram = MagicMock()
+        tracker = SignalOutcomeTracker(
+            database_url=db_url, symbol="XAUUSD", timeframe="1h", expiry_hours=1,
+            telegram_subscriber=telegram,
+        )
+        candle = pd.Series({'open': 2001.0, 'high': 2005.0, 'low': 1999.0, 'close': 2002.0})
+        tracker.check_candle(candle, candle_time=datetime(2026, 1, 1, 12, 0))
+
+        telegram.send_close_notification.assert_called_once()
+        assert telegram.send_close_notification.call_args.kwargs['outcome'] == 'expired'
+
+    def test_does_not_notify_unresolved_signal(self, db_url, session_for):
+        make_signal(
+            session_for, SignalDirection.LONG, entry=2000.0, sl=1990.0, tp=2030.0,
+            timestamp=datetime(2026, 1, 1, 10, 0),
+        )
+        telegram = MagicMock()
+        tracker = SignalOutcomeTracker(
+            database_url=db_url, symbol="XAUUSD", timeframe="1h", expiry_hours=48,
+            telegram_subscriber=telegram,
+        )
+        candle = pd.Series({'open': 2001.0, 'high': 2005.0, 'low': 1999.0, 'close': 2002.0})
+        tracker.check_candle(candle, candle_time=datetime(2026, 1, 1, 11, 0))
+
+        telegram.send_close_notification.assert_not_called()
+
+    def test_no_telegram_subscriber_does_not_crash(self, db_url, session_for):
+        """telegram_subscriber is optional — outcome tracking must work without it."""
+        make_signal(
+            session_for, SignalDirection.LONG, entry=2000.0, sl=1990.0, tp=2030.0,
+            timestamp=datetime(2026, 1, 1, 10, 0),
+        )
+        tracker = SignalOutcomeTracker(
+            database_url=db_url, symbol="XAUUSD", timeframe="1h", expiry_hours=48,
+        )
+        candle = pd.Series({'open': 2020.0, 'high': 2035.0, 'low': 2015.0, 'close': 2032.0})
+        tracker.check_candle(candle, candle_time=datetime(2026, 1, 1, 11, 0))  # must not raise

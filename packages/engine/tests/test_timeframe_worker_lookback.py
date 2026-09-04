@@ -23,6 +23,7 @@ def make_worker(timeframe="1h"):
     worker.timeframe = timeframe
     worker.database_url = "sqlite:///:memory:"
     worker.shared_dedup_subscriber = MagicMock()
+    worker.telegram_subscriber = MagicMock()
     worker.enable_trading = False
     worker.mt5_config = None
     return worker
