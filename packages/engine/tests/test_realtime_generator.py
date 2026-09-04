@@ -57,6 +57,60 @@ class TestComputeRiskReward:
         assert SignalValidator.compute_risk_reward(signal) is None
 
 
+class TestValidateHandlesNaiveTimestamps:
+    """
+    Regression coverage for a self-inflicted production outage: fixing the
+    Yahoo Finance timezone bug (converting candle timestamps to naive UTC
+    at the source, see realtime_feed.py) made every signal.time naive, but
+    SignalValidator.validate() still did
+    `pd.Timestamp.now(tz='UTC') - pd.Timestamp(signal.time)` — a tz-aware
+    minus tz-naive subtraction that raises TypeError. Every signal
+    generated in production between that fix deploying and this one being
+    caught crashed inside validate() and was silently never published.
+    """
+
+    def test_recent_naive_timestamp_does_not_raise(self):
+        validator = SignalValidator(min_rr_ratio=1.5)
+        recent_naive = pd.Timestamp.now(tz='UTC').tz_localize(None) - pd.Timedelta(minutes=5)
+        signal = StrategySignal(
+            time=recent_naive, direction=TradeDirection.LONG,
+            entry_price=2000.0, stop_loss=1990.0, take_profit=2020.0,
+            confidence=0.6, signal_name='test',
+        )
+
+        validated = validator.validate(signal, current_price=2000.0, symbol='XAUUSD', timeframe='1h')
+
+        assert validated is not None
+        assert validated.timestamp.tzinfo is None
+
+    def test_recent_tz_aware_timestamp_still_works(self):
+        """Defensive: a tz-aware signal.time (e.g. a future/alternate data
+        feed) must normalize cleanly rather than raise."""
+        validator = SignalValidator(min_rr_ratio=1.5)
+        recent_aware = pd.Timestamp.now(tz='UTC') - pd.Timedelta(minutes=5)
+        signal = StrategySignal(
+            time=recent_aware, direction=TradeDirection.LONG,
+            entry_price=2000.0, stop_loss=1990.0, take_profit=2020.0,
+            confidence=0.6, signal_name='test',
+        )
+
+        validated = validator.validate(signal, current_price=2000.0, symbol='XAUUSD', timeframe='1h')
+
+        assert validated is not None
+        assert validated.timestamp.tzinfo is None
+
+    def test_old_naive_timestamp_is_rejected_not_crashed(self):
+        validator = SignalValidator(min_rr_ratio=1.5)
+        old_naive = pd.Timestamp.now(tz='UTC').tz_localize(None) - pd.Timedelta(hours=5)
+        signal = StrategySignal(
+            time=old_naive, direction=TradeDirection.LONG,
+            entry_price=2000.0, stop_loss=1990.0, take_profit=2020.0,
+            confidence=0.6, signal_name='test',
+        )
+
+        assert validator.validate(signal, current_price=2000.0, symbol='XAUUSD', timeframe='1h') is None
+
+
 class TestMeetsMinRr:
     """Regression coverage for the fix: reward/risk for an RR-configured
     trade often lands a few ULPs below the intended ratio due to

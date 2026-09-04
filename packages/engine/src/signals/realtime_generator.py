@@ -104,6 +104,27 @@ class ValidatedSignal:
         )
 
 
+def _utcnow_naive() -> pd.Timestamp:
+    """Current time as a naive UTC timestamp, matching the convention
+    established at the data-feed layer (see realtime_feed.py) where every
+    candle timestamp is naive-UTC rather than tz-aware."""
+    return pd.Timestamp.now(tz='UTC').tz_localize(None)
+
+
+def _to_naive_utc(ts) -> pd.Timestamp:
+    """Normalize a timestamp to naive UTC. Defensive against a tz-aware
+    input (e.g. a future data feed that hasn't been normalized) so this
+    never raises "Cannot subtract tz-naive and tz-aware datetime-like
+    objects" the way a bare pd.Timestamp.now(tz='UTC') comparison did —
+    that crashed validate() on every signal once candle timestamps became
+    naive-UTC, silently dropping every signal generated in production
+    between that fix and this one."""
+    ts = pd.Timestamp(ts)
+    if ts.tzinfo is not None:
+        ts = ts.tz_convert('UTC').tz_localize(None)
+    return ts
+
+
 class SignalValidator:
     """
     Validates signals before publishing to prevent bad trades.
@@ -226,7 +247,7 @@ class SignalValidator:
 
         # Check if signal is recent (within last hour)
         # REJECT old/historical signals to prevent startup signal replay
-        signal_age_hours = (pd.Timestamp.now(tz='UTC') - pd.Timestamp(signal.time)).total_seconds() / 3600
+        signal_age_hours = (_utcnow_naive() - _to_naive_utc(signal.time)).total_seconds() / 3600
         is_recent_signal = signal_age_hours < 1.0  # Signal must be from last hour
 
         # REJECT old signals (prevents historical candles from triggering notifications on startup)
@@ -247,7 +268,7 @@ class SignalValidator:
 
         # Create validated signal
         validated = ValidatedSignal(
-            timestamp=pd.Timestamp(signal.time),
+            timestamp=_to_naive_utc(signal.time),
             symbol=symbol,
             timeframe=timeframe,
             strategy_name=signal.signal_name,
@@ -267,7 +288,7 @@ class SignalValidator:
         self.recent_signals.append(validated)
 
         # Keep only recent signals (last 24 hours)
-        cutoff = pd.Timestamp.now(tz=validated.timestamp.tz) - pd.Timedelta(hours=24)
+        cutoff = _utcnow_naive() - pd.Timedelta(hours=24)
         self.recent_signals = [
             s for s in self.recent_signals
             if s.timestamp > cutoff
@@ -291,7 +312,7 @@ class SignalValidator:
 
     def _is_duplicate(self, direction: str, signal_time: datetime) -> bool:
         """Check if similar signal was recently generated."""
-        cutoff = pd.Timestamp(signal_time) - pd.Timedelta(hours=self.duplicate_window_hours)
+        cutoff = _to_naive_utc(signal_time) - pd.Timedelta(hours=self.duplicate_window_hours)
 
         for recent in self.recent_signals:
             if recent.direction == direction and recent.timestamp > cutoff:
