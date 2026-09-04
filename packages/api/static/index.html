@@ -330,7 +330,7 @@
         // Load current price
         async function loadPrice() {
             try {
-                const response = await fetch(`${API_BASE}/api/signals/price/current`);
+                const response = await fetch(`${API_BASE}/v1/signals/price/current`);
                 const data = await response.json();
 
                 document.getElementById('currentPrice').textContent = formatCurrency(data.price);
@@ -349,7 +349,7 @@
         // Load service status
         async function loadStatus() {
             try {
-                const response = await fetch(`${API_BASE}/api/signals/service/status`);
+                const response = await fetch(`${API_BASE}/v1/signals/service/status`);
                 const data = await response.json();
 
                 document.getElementById('serviceStatus').textContent =
@@ -379,7 +379,7 @@
         // Load signals
         async function loadSignals() {
             try {
-                const response = await fetch(`${API_BASE}/api/signals/?page_size=20`);
+                const response = await fetch(`${API_BASE}/v1/signals/?page_size=20`);
                 const data = await response.json();
 
                 const signalsList = document.getElementById('signalsList');
