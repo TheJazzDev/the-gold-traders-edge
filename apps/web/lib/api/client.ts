@@ -1,11 +1,25 @@
 /**
- * API Client for Gold Trader's Edge
- * Connects to Railway backend API
+ * Single HTTP client for the Gold Trader's Edge API.
+ *
+ * Previously the app had three parallel HTTP layers (this file, a second
+ * axios instance in the now-deleted lib/api.ts, and raw fetch() calls
+ * scattered in components) with duplicated, conflicting types. This is the
+ * only one now.
  */
+import axios, { AxiosInstance, AxiosError } from "axios";
+import type {
+  MarketStatus,
+  PerformanceStats,
+  RulePerformance,
+  ServiceStatus,
+  Setting,
+  SettingsByCategory,
+  SignalsResponse,
+  StrategyPerformance,
+  Trade,
+} from "@/lib/types";
 
-import axios, { AxiosInstance, AxiosError } from 'axios';
-
-const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
 class APIClient {
   private client: AxiosInstance;
@@ -14,56 +28,27 @@ class APIClient {
     this.client = axios.create({
       baseURL: API_URL,
       timeout: 30000,
-      headers: {
-        'Content-Type': 'application/json',
-      },
+      headers: { "Content-Type": "application/json" },
     });
 
-    // Request interceptor (add auth token if needed)
-    this.client.interceptors.request.use(
-      (config) => {
-        // TODO: Add authentication token from session
-        // const token = getSession()?.token;
-        // if (token) {
-        //   config.headers.Authorization = `Bearer ${token}`;
-        // }
-        return config;
-      },
-      (error) => Promise.reject(error)
-    );
-
-    // Response interceptor (handle errors)
     this.client.interceptors.response.use(
       (response) => response,
-      (error: AxiosError) => {
-        if (error.response?.status === 401) {
-          // Unauthorized - redirect to login
-          // window.location.href = '/login';
-        }
-        return Promise.reject(error);
-      }
+      (error: AxiosError) => Promise.reject(error)
     );
   }
 
   // ==================== SETTINGS ====================
 
-  async getSettings(category?: string) {
-    const params = category ? { category } : {};
-    const response = await this.client.get('/v1/settings', { params });
-    return response.data;
+  async getSettingsByCategory(): Promise<SettingsByCategory> {
+    const response = await this.client.get("/v1/settings/categories");
+    const byCategory: SettingsByCategory = {};
+    for (const entry of response.data as { category: string; settings: Setting[] }[]) {
+      byCategory[entry.category] = entry.settings;
+    }
+    return byCategory;
   }
 
-  async getSettingsByCategory() {
-    const response = await this.client.get('/v1/settings/categories');
-    return response.data;
-  }
-
-  async getSetting(key: string) {
-    const response = await this.client.get(`/v1/settings/${key}`);
-    return response.data;
-  }
-
-  async updateSetting(key: string, value: any, modifiedBy: string = 'admin') {
+  async updateSetting(key: string, value: unknown, modifiedBy = "web-app"): Promise<Setting> {
     const response = await this.client.put(`/v1/settings/${key}`, {
       value,
       modified_by: modifiedBy,
@@ -71,23 +56,13 @@ class APIClient {
     return response.data;
   }
 
-  async bulkUpdateSettings(settings: Record<string, any>, modifiedBy: string = 'admin') {
-    const response = await this.client.put('/v1/settings/bulk/update', {
-      settings,
-      modified_by: modifiedBy,
-    });
+  async getServiceStatus(): Promise<ServiceStatus> {
+    const response = await this.client.get("/v1/settings/service/status");
     return response.data;
   }
 
-  async resetSetting(key: string, modifiedBy: string = 'admin') {
-    const response = await this.client.post(`/v1/settings/${key}/reset`, null, {
-      params: { modified_by: modifiedBy },
-    });
-    return response.data;
-  }
-
-  async getServiceStatus() {
-    const response = await this.client.get('/v1/settings/service/status');
+  async getStrategies(): Promise<StrategyPerformance[]> {
+    const response = await this.client.get("/v1/settings/strategies");
     return response.data;
   }
 
@@ -99,49 +74,47 @@ class APIClient {
     status?: string;
     strategy?: string;
     timeframe?: string;
-  }) {
-    const response = await this.client.get('/v1/signals/history', { params });
+  }): Promise<SignalsResponse> {
+    const response = await this.client.get("/v1/signals/history", { params });
     return response.data;
   }
 
-  async getSignal(id: string) {
-    const response = await this.client.get(`/v1/signals/${id}`);
+  async getPerformanceStats(days?: number): Promise<PerformanceStats> {
+    const response = await this.client.get("/v1/signals/stats/performance", {
+      params: days ? { days } : undefined,
+    });
     return response.data;
   }
 
   // ==================== ANALYTICS ====================
 
-  async getAnalyticsOverview() {
-    const response = await this.client.get('/v1/analytics/overview');
-    return response.data;
+  async getByRule(days?: number): Promise<RulePerformance[]> {
+    const response = await this.client.get("/v1/analytics/by-rule", {
+      params: days ? { days } : undefined,
+    });
+    return response.data.strategies;
   }
 
-  async getPerformanceMetrics(params?: {
-    days?: number;
-    strategy?: string;
-  }) {
-    const response = await this.client.get('/v1/analytics/performance', { params });
-    return response.data;
+  async getTrades(page = 1, pageSize = 20): Promise<{ total: number; trades: Trade[] }> {
+    const response = await this.client.get("/v1/analytics/backtest");
+    // /v1/analytics/backtest already returns every resolved trade; paginate
+    // client-side rather than adding a redundant endpoint for one screen.
+    const all: Trade[] = response.data.trades;
+    const start = (page - 1) * pageSize;
+    return { total: all.length, trades: all.slice(start, start + pageSize) };
   }
 
   // ==================== MARKET ====================
 
-  async getMarketStatus() {
-    const response = await this.client.get('/v1/market/status');
-    return response.data;
-  }
-
-  async getLatestPrice(symbol: string = 'XAUUSD') {
-    const response = await this.client.get('/v1/market/price/latest', {
-      params: { symbol },
-    });
+  async getMarketStatus(): Promise<MarketStatus> {
+    const response = await this.client.get("/v1/market/status");
     return response.data;
   }
 
   // ==================== HEALTH ====================
 
-  async healthCheck() {
-    const response = await this.client.get('/health');
+  async healthCheck(): Promise<{ status: string }> {
+    const response = await this.client.get("/health");
     return response.data;
   }
 }

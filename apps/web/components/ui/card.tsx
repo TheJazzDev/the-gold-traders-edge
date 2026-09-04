@@ -1,12 +1,12 @@
 import { cn } from "@/lib/utils"
 
-interface CardProps extends React.HTMLAttributes<HTMLDivElement> {}
+type CardProps = React.HTMLAttributes<HTMLDivElement>
 
 export function Card({ className, ...props }: CardProps) {
   return (
     <div
       className={cn(
-        "rounded-lg border bg-white p-6 shadow-sm",
+        "rounded-lg border border-border bg-card text-card-foreground p-4 shadow-sm sm:p-6",
         className
       )}
       {...props}
@@ -27,7 +27,7 @@ export function CardTitle({ className, ...props }: CardProps) {
   return (
     <h3
       className={cn(
-        "text-2xl font-semibold leading-none tracking-tight text-gray-900",
+        "text-lg sm:text-2xl font-semibold leading-none tracking-tight text-foreground",
         className
       )}
       {...props}
@@ -38,7 +38,7 @@ export function CardTitle({ className, ...props }: CardProps) {
 export function CardDescription({ className, ...props }: CardProps) {
   return (
     <p
-      className={cn("text-sm text-gray-600", className)}
+      className={cn("text-sm text-muted-foreground", className)}
       {...props}
     />
   )

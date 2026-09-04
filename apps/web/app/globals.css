@@ -1,13 +1,63 @@
 @import "tailwindcss";
 
+/*
+ * This app is dark-only by design (a trading dashboard, not a
+ * light/dark-toggle product), so these tokens are defined once rather than
+ * swapped per color-scheme. Values back the shadcn-style primitives in
+ * components/ui/* — without them (the previous state of this file) those
+ * primitives referenced bg-primary/border-input/bg-accent/etc with no
+ * definition anywhere, so Tailwind v4 emitted no CSS for them and every
+ * button/switch/slider rendered colorless.
+ */
 :root {
-  --background: #0f172a;
+  --background: #0b1220;
   --foreground: #f8fafc;
+
+  --card: #131c2e;
+  --card-foreground: #f8fafc;
+  --popover: #131c2e;
+  --popover-foreground: #f8fafc;
+
+  --primary: #f59e0b;
+  --primary-foreground: #1c1206;
+  --secondary: #1e293b;
+  --secondary-foreground: #f8fafc;
+  --muted: #1e293b;
+  --muted-foreground: #94a3b8;
+  --accent: #1e293b;
+  --accent-foreground: #f8fafc;
+  --destructive: #ef4444;
+  --destructive-foreground: #fef2f2;
+
+  --border: rgba(255, 255, 255, 0.1);
+  --input: rgba(255, 255, 255, 0.14);
+  --ring: #f59e0b;
+  --radius: 0.75rem;
 }
 
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --radius-lg: var(--radius);
+  --radius-md: calc(var(--radius) - 4px);
+  --radius-sm: calc(var(--radius) - 8px);
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
 }
@@ -15,7 +65,7 @@
 body {
   background: var(--background);
   color: var(--foreground);
-  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  font-family: var(--font-sans), -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
 }
 
 /* Smooth scrolling */

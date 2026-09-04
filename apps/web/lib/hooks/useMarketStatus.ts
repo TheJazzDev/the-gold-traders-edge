@@ -1,26 +1,12 @@
-import { useQuery } from '@tanstack/react-query';
-import { apiClient } from '@/lib/api/client';
-
-export interface MarketStatus {
-  is_open: boolean;
-  reason: string;
-  current_time: string;
-  timezone: string;
-  next_open?: string;
-  next_close?: string;
-  time_until_event?: string;
-  market_hours: {
-    description: string;
-    open: string;
-    close: string;
-  };
-}
+import { useQuery } from "@tanstack/react-query";
+import { apiClient } from "@/lib/api/client";
+import type { MarketStatus } from "@/lib/types";
 
 export function useMarketStatus() {
   return useQuery<MarketStatus>({
-    queryKey: ['marketStatus'],
+    queryKey: ["marketStatus"],
     queryFn: () => apiClient.getMarketStatus(),
-    refetchInterval: 60000, // Refetch every minute
-    staleTime: 30000, // Consider data stale after 30 seconds
+    refetchInterval: 60000,
+    staleTime: 30000,
   });
 }

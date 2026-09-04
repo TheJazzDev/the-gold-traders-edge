@@ -3,7 +3,7 @@
 import { useMarketStatus } from '@/lib/hooks/useMarketStatus';
 import { Badge } from '@/components/ui/badge';
 import { Card } from '@/components/ui/card';
-import { Clock, TrendingUp, Calendar } from 'lucide-react';
+import { Clock, Calendar } from 'lucide-react';
 
 export function MarketStatus() {
   const { data: marketStatus, isLoading } = useMarketStatus();
