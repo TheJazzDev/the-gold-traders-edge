@@ -308,8 +308,24 @@ DEFAULT_SETTINGS = [
         'value': 'running',
         'value_type': 'string',
         'default_value': 'running',
-        'description': 'Service status (running/paused/stopped)',
-        'editable': True,
+        'description': 'Deprecated: never read anywhere. Real worker status is now derived live from worker_heartbeat by /v1/signals/service/status and /v1/settings/service/status.',
+        'editable': False,
+        'requires_restart': False,
+    },
+    {
+        'key': 'worker_heartbeat',
+        'category': SettingCategory.SYSTEM,
+        'value': '{}',
+        'value_type': 'json',
+        'default_value': '{}',
+        'description': (
+            "Internal: JSON heartbeat written by the worker roughly every "
+            "15s (updated_at, start_time, per-timeframe is_running/"
+            "candles_processed/signals_generated). Read by the service "
+            "status API endpoints instead of guessing liveness from signal "
+            "staleness."
+        ),
+        'editable': False,
         'requires_restart': False,
     },
     {

@@ -9,6 +9,7 @@ from fastapi import APIRouter, HTTPException, Depends
 from pydantic import BaseModel, Field
 from typing import List, Optional, Any, Dict
 from enum import Enum
+from datetime import datetime
 import json
 import sys
 from pathlib import Path
@@ -21,6 +22,8 @@ from database.connection import get_db
 from database.settings_models import Setting, SettingCategory
 from database.settings_repository import SettingsRepository
 from sqlalchemy.orm import Session
+
+from src.worker_status import derive_worker_status
 
 router = APIRouter(prefix="/v1/settings", tags=["settings"])
 
@@ -432,14 +435,22 @@ async def get_service_status(db: Session = Depends(get_db)):
     """
     Get current service status and key settings.
 
+    "status"/"service_status" reflect the worker's own heartbeat (see
+    worker_status.derive_worker_status) rather than the old static
+    `service_status` setting, which nothing ever wrote to.
+
     Returns:
         Service configuration summary
     """
     repo = SettingsRepository(db)
 
+    heartbeat = repo.get("worker_heartbeat", default={}) or {}
+    worker_status = derive_worker_status(heartbeat, timeframe=LIVE_TIMEFRAME, now=datetime.now())
+    status = "running" if worker_status.is_running else "stopped"
+
     return {
-        "status": repo.get("service_status", "running"),
-        "service_status": repo.get("service_status", "running"),
+        "status": status,
+        "service_status": status,
         "auto_trading_enabled": repo.get("auto_trading_enabled", False),
         "dry_run_mode": repo.get("dry_run_mode", False),
         "max_risk_per_trade": repo.get("max_risk_per_trade", 1.0),

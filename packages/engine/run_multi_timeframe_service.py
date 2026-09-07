@@ -366,6 +366,13 @@ class MultiTimeframeService:
         self.is_running = False
         self.start_time: datetime = None
 
+        # Cached across calls to _load_last_report_time/_save_last_report_time/
+        # _save_heartbeat so the heartbeat's 15s cadence doesn't churn a fresh
+        # DatabaseManager (and engine/connection pool) or re-run the full
+        # settings-defaults sync on every single write — see _open_settings_repo.
+        self._db_manager: Optional[DatabaseManager] = None
+        self._settings_ready = False
+
         # Create SHARED deduplication subscriber (ONE instance for ALL timeframes)
         # DATABASE-BACKED: Loads recent signals from DB on startup to prevent duplicates after restart
         db_subscriber = DatabaseSubscriber(database_url=self.database_url)
@@ -439,6 +446,12 @@ class MultiTimeframeService:
         for timeframe, worker in self.workers.items():
             worker.stop()
 
+        # Flush a final heartbeat with is_running=False for every worker —
+        # otherwise the last periodic write (up to heartbeat_interval old)
+        # would keep reporting "running" via the API until it aged past the
+        # staleness threshold.
+        self._save_heartbeat()
+
         logger.info("✅ All workers stopped")
 
     def _monitor_loop(self):
@@ -449,13 +462,21 @@ class MultiTimeframeService:
         """
         last_status_time = datetime.now()
         last_keepalive_time = datetime.now()
+        last_heartbeat_time = None
         last_report_time = self._load_last_report_time()
         status_interval = 300  # 5 minutes
         keepalive_interval = 240  # 4 minutes (ping API to keep it awake)
+        heartbeat_interval = 15  # seconds; see _save_heartbeat
         report_interval = 7 * 24 * 3600  # weekly
 
         while self.is_running:
             time.sleep(10)  # Check every 10 seconds
+
+            # Persist live worker status so the API can report real state
+            # instead of guessing liveness from signal staleness.
+            if last_heartbeat_time is None or (datetime.now() - last_heartbeat_time).total_seconds() >= heartbeat_interval:
+                self._save_heartbeat()
+                last_heartbeat_time = datetime.now()
 
             if last_report_time is None or (datetime.now() - last_report_time).total_seconds() >= report_interval:
                 self._send_weekly_report()
@@ -514,12 +535,57 @@ class MultiTimeframeService:
 
         print("=" * 80 + "\n")
 
+    def _save_heartbeat(self):
+        """
+        Persist live worker status to the settings table so the API can
+        report real state instead of guessing liveness from signal
+        staleness (see MEMORY: /v1/signals/service/status and
+        /v1/settings/service/status both used to report "stopped" for a
+        perfectly healthy worker that simply hadn't generated a new signal
+        recently). Called every ~15s from _monitor_loop — deliberately cheap
+        (see _get_db_manager/_open_settings_repo) since this runs for the
+        entire life of the process.
+        """
+        try:
+            payload = {
+                'updated_at': datetime.now().isoformat(),
+                'start_time': self.start_time.isoformat() if self.start_time else None,
+                'workers': {
+                    timeframe: {
+                        'is_running': worker.is_running,
+                        'candles_processed': worker.generator.total_candles_processed if worker.generator else 0,
+                        'signals_generated': worker.generator.total_signals_generated if worker.generator else 0,
+                    }
+                    for timeframe, worker in self.workers.items()
+                },
+            }
+            with self._get_db_manager().session_scope() as session:
+                repo = self._open_settings_repo(session)
+                setting = repo.get_setting('worker_heartbeat')
+                if setting:
+                    setting.set_typed_value(payload)
+        except Exception as e:
+            logger.error(f"Failed to persist worker heartbeat: {e}", exc_info=True)
+
+    def _get_db_manager(self) -> DatabaseManager:
+        """A single DatabaseManager (engine/connection pool) reused for the life of the process."""
+        if getattr(self, '_db_manager', None) is None:
+            self._db_manager = DatabaseManager(self.database_url)
+        return self._db_manager
+
     def _open_settings_repo(self, session) -> SettingsRepository:
-        """Ensure the settings table and its default rows exist, then return a repo bound to `session`."""
-        Base.metadata.create_all(bind=session.get_bind())
-        repo = SettingsRepository(session)
-        repo.initialize_defaults()
-        return repo
+        """
+        Ensure the settings table and its default rows exist, then return a
+        repo bound to `session`. The table-create + metadata-defaults sync
+        (a query per DEFAULT_SETTINGS row) only needs to happen once per
+        process — repeating it on every _save_heartbeat call (every ~15s)
+        would mean sustained, unnecessary DB chatter for no benefit.
+        """
+        if not getattr(self, '_settings_ready', False):
+            Base.metadata.create_all(bind=session.get_bind())
+            SettingsRepository(session).initialize_defaults()
+            self._settings_ready = True
+        return SettingsRepository(session)
 
     def _load_last_report_time(self) -> Optional[datetime]:
         """
@@ -533,8 +599,7 @@ class MultiTimeframeService:
         the caller treats as "send one now".
         """
         try:
-            db_manager = DatabaseManager(self.database_url)
-            with db_manager.session_scope() as session:
+            with self._get_db_manager().session_scope() as session:
                 repo = self._open_settings_repo(session)
                 raw = repo.get('weekly_report_last_sent_at', default='')
             return datetime.fromisoformat(raw) if raw else None
@@ -545,8 +610,7 @@ class MultiTimeframeService:
     def _save_last_report_time(self, when: datetime):
         """Persist when the weekly report was last sent (see _load_last_report_time)."""
         try:
-            db_manager = DatabaseManager(self.database_url)
-            with db_manager.session_scope() as session:
+            with self._get_db_manager().session_scope() as session:
                 repo = self._open_settings_repo(session)
                 setting = repo.get_setting('weekly_report_last_sent_at')
                 if setting:

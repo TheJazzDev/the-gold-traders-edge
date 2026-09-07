@@ -16,6 +16,7 @@ sys.path.insert(0, str(engine_src))
 
 from database.models import Signal, SignalStatus, SignalDirection
 from database.signal_repository import SignalRepository
+from database.settings_repository import SettingsRepository
 
 # Import API models
 from src.models.signal import (
@@ -26,6 +27,7 @@ from src.models.signal import (
     PerformanceStats
 )
 from src.database import get_db
+from src.worker_status import derive_worker_status
 
 router = APIRouter(prefix="/v1/signals", tags=["signals"])
 
@@ -334,6 +336,11 @@ async def get_service_status(db: Session = Depends(get_db)):
     """
     Get signal service status.
 
+    Liveness/candle-progress comes from the worker's own heartbeat (see
+    worker_status.derive_worker_status) rather than being inferred from
+    signal staleness — a worker that's healthy but simply hasn't generated a
+    new signal recently used to be misreported as "stopped".
+
     Returns:
         Service status information
     """
@@ -345,12 +352,17 @@ async def get_service_status(db: Session = Depends(get_db)):
     timeframe = (latest_signal.timeframe if latest_signal else None) or os.getenv("TIMEFRAME", "1h")
     timeframe_hours = _parse_timeframe_hours(timeframe)
 
-    # Check if service has run recently (within 5 candles' worth of time)
-    is_running = False
-    last_candle_time = None
+    settings_repo = SettingsRepository(db)
+    heartbeat = settings_repo.get('worker_heartbeat', default={}) or {}
+    worker_status = derive_worker_status(heartbeat, timeframe=timeframe, now=datetime.now())
 
-    if latest_signal:
-        last_candle_time = latest_signal.created_at
+    is_running = worker_status.is_running
+    last_candle_time = latest_signal.created_at if latest_signal else None
+
+    if not heartbeat and latest_signal:
+        # No heartbeat has ever been written (e.g. worker never started this
+        # deploy) — fall back to the old staleness heuristic rather than
+        # just reporting "stopped" outright.
         time_since_last = datetime.now() - last_candle_time
         is_running = time_since_last.total_seconds() < (5 * timeframe_hours * 3600)
 
@@ -390,8 +402,9 @@ async def get_service_status(db: Session = Depends(get_db)):
 
     return ServiceStatus(
         status="running" if is_running else "stopped",
-        candles_processed=total_signals,  # Approximate
-        signals_generated=total_signals,
+        uptime_hours=worker_status.uptime_hours,
+        candles_processed=worker_status.candles_processed,
+        signals_generated=worker_status.signals_generated,
         signal_rate=signal_rate,
         last_candle_time=last_candle_time,
         next_candle_time=next_candle_time,
