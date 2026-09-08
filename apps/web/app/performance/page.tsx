@@ -5,8 +5,14 @@ import { apiClient } from "@/lib/api/client";
 import { NavBar } from "@/components/layout/NavBar";
 import { PerformanceStats } from "@/components/dashboard/performance-stats";
 import { RulePerformanceChart } from "@/components/dashboard/rule-performance-chart";
+import { LiveVsBacktestTable } from "@/components/dashboard/live-vs-backtest-table";
 import { TradeHistoryTable } from "@/components/dashboard/trade-history-table";
-import type { PerformanceStats as PerformanceStatsType, RulePerformance, Trade } from "@/lib/types";
+import type {
+  PerformanceStats as PerformanceStatsType,
+  RulePerformance,
+  StrategyPerformance,
+  Trade,
+} from "@/lib/types";
 
 export default function PerformancePage() {
   const stats = useQuery<PerformanceStatsType>({
@@ -16,6 +22,10 @@ export default function PerformancePage() {
   const byRule = useQuery<RulePerformance[]>({
     queryKey: ["by-rule"],
     queryFn: () => apiClient.getByRule(),
+  });
+  const strategies = useQuery<StrategyPerformance[]>({
+    queryKey: ["strategies"],
+    queryFn: () => apiClient.getStrategies(),
   });
   const trades = useQuery<{ total: number; trades: Trade[] }>({
     queryKey: ["trades"],
@@ -36,6 +46,12 @@ export default function PerformancePage() {
         </div>
 
         <PerformanceStats data={stats.data as PerformanceStatsType} loading={stats.isLoading || !stats.data} />
+
+        <LiveVsBacktestTable
+          live={byRule.data || []}
+          backtest={strategies.data || []}
+          loading={byRule.isLoading || strategies.isLoading}
+        />
 
         <RulePerformanceChart data={byRule.data || []} loading={byRule.isLoading} />
 
