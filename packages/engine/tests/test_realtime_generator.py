@@ -220,3 +220,88 @@ class TestOutcomeTrackerWiring:
         mock_tracker.check_candle.assert_called_once()
         call_args = mock_tracker.check_candle.call_args
         assert call_args[0][1] == dates[-1]  # candle_time
+
+
+class TestSkipsAlreadyProcessedCandle:
+    """Regression coverage for the 2026-09-08 duplicate-signal incident: a
+    deploy restarted the worker mid-candle, and since RealtimeSignalGenerator
+    had no memory of which candle it last processed, the fresh instance
+    immediately re-evaluated the still-current candle and fired a second,
+    near-duplicate signal 3 minutes after the first (see
+    docs/superpowers/specs/strategy-ledger.md). last_processed_candle_getter/
+    setter close that hole by persisting across restarts (via TimeframeWorker,
+    not tested here — this covers the generator's own skip logic)."""
+
+    def _df(self):
+        dates = pd.date_range(start='2026-01-01', periods=5, freq='1h')
+        return pd.DataFrame({
+            'open': [2000, 2001, 2002, 2003, 2004],
+            'high': [2005, 2006, 2007, 2008, 2009],
+            'low': [1995, 1996, 1997, 1998, 1999],
+            'close': [2001, 2002, 2003, 2004, 2005],
+        }, index=dates), dates
+
+    def test_skips_entirely_when_latest_candle_already_processed(self):
+        df, dates = self._df()
+        mock_tracker = MagicMock()
+        setter = MagicMock()
+        generator = RealtimeSignalGenerator(
+            data_feed=FakeDataFeedWithCandles(df),
+            validator=SignalValidator(),
+            outcome_tracker=mock_tracker,
+            last_processed_candle_getter=lambda: dates[-1],  # already processed
+            last_processed_candle_setter=setter,
+        )
+
+        result = generator.run_once()
+
+        assert result is None
+        mock_tracker.check_candle.assert_not_called()
+        setter.assert_not_called()
+        assert generator.total_candles_processed == 0
+
+    def test_processes_and_records_a_genuinely_new_candle(self):
+        df, dates = self._df()
+        mock_tracker = MagicMock()
+        setter = MagicMock()
+        generator = RealtimeSignalGenerator(
+            data_feed=FakeDataFeedWithCandles(df),
+            validator=SignalValidator(),
+            outcome_tracker=mock_tracker,
+            last_processed_candle_getter=lambda: dates[-2],  # one behind
+            last_processed_candle_setter=setter,
+        )
+
+        generator.run_once()
+
+        mock_tracker.check_candle.assert_called_once()
+        setter.assert_called_once_with(dates[-1])
+        assert generator.total_candles_processed == 1
+
+    def test_processes_normally_when_nothing_recorded_yet(self):
+        df, dates = self._df()
+        setter = MagicMock()
+        generator = RealtimeSignalGenerator(
+            data_feed=FakeDataFeedWithCandles(df),
+            validator=SignalValidator(),
+            last_processed_candle_getter=lambda: None,
+            last_processed_candle_setter=setter,
+        )
+
+        generator.run_once()
+
+        setter.assert_called_once_with(dates[-1])
+        assert generator.total_candles_processed == 1
+
+    def test_backward_compatible_with_no_getter_or_setter(self):
+        """Existing callers (tests, run_demo_trading.py, signal_service.py)
+        that don't pass these params must keep working exactly as before."""
+        df, dates = self._df()
+        generator = RealtimeSignalGenerator(
+            data_feed=FakeDataFeedWithCandles(df),
+            validator=SignalValidator(),
+        )
+
+        generator.run_once()
+
+        assert generator.total_candles_processed == 1

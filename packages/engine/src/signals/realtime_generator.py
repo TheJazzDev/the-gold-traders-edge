@@ -341,6 +341,8 @@ class RealtimeSignalGenerator:
         lookback_periods: int = 200,
         outcome_tracker: Optional["SignalOutcomeTracker"] = None,
         pre_run_hook: Optional[Callable[[], None]] = None,
+        last_processed_candle_getter: Optional[Callable[[], Optional[datetime]]] = None,
+        last_processed_candle_setter: Optional[Callable[[datetime], None]] = None,
     ):
         """
         Initialize signal generator.
@@ -354,11 +356,25 @@ class RealtimeSignalGenerator:
                 iteration in `start()`, e.g. to re-read enabled rules /
                 thresholds from a settings store so they take effect without
                 a restart.
+            last_processed_candle_getter: Optional callable returning the
+                timestamp of the last candle actually processed (persisted
+                across restarts, e.g. via a settings store — see
+                TimeframeWorker). `run_once()` skips entirely (no signal
+                generation, no outcome-tracker check) if the current latest
+                candle is not newer than this. Without it, a worker
+                restarted mid-candle immediately re-evaluates and can
+                re-signal on the same still-forming candle — see the
+                2026-09-08 duplicate-signal incident in
+                docs/superpowers/specs/strategy-ledger.md.
+            last_processed_candle_setter: Optional callable invoked with the
+                latest candle's timestamp after it's actually processed.
         """
         self.data_feed = data_feed
         self.lookback_periods = lookback_periods
         self.outcome_tracker = outcome_tracker
         self.pre_run_hook = pre_run_hook
+        self.last_processed_candle_getter = last_processed_candle_getter
+        self.last_processed_candle_setter = last_processed_candle_setter
 
         # Initialize strategy. GoldStrategy's own default (order_block_retest
         # — the only validated rule, see strategy-ledger.md) already applies
@@ -469,6 +485,17 @@ class RealtimeSignalGenerator:
             logger.warning("No data returned from data feed")
             return None
 
+        candle_time = df.index[-1]
+
+        if self.last_processed_candle_getter is not None:
+            last_processed = self.last_processed_candle_getter()
+            if last_processed is not None and candle_time <= last_processed:
+                logger.debug(
+                    f"Candle {candle_time} already processed (last: {last_processed}) — "
+                    f"skipping to avoid re-signaling after a restart"
+                )
+                return None
+
         self.total_candles_processed += 1
 
         logger.info(
@@ -488,6 +515,9 @@ class RealtimeSignalGenerator:
 
             # Publish to subscribers
             self._publish_signal(signal)
+
+        if self.last_processed_candle_setter is not None:
+            self.last_processed_candle_setter(candle_time)
 
         return signal
 

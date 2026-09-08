@@ -225,6 +225,34 @@ class TimeframeWorker:
                     f"min_confidence={validator.min_confidence}, min_rr_ratio={validator.min_rr_ratio}"
                 )
 
+            # Persist which candle was last actually processed, so a worker
+            # restarted mid-candle (e.g. by a deploy) never re-evaluates and
+            # re-signals on a candle it already processed — see the
+            # 2026-09-08 duplicate-signal incident in
+            # docs/superpowers/specs/strategy-ledger.md. Keyed by timeframe
+            # in one JSON setting rather than a setting per timeframe.
+            def get_last_processed_candle():
+                db_manager = DatabaseManager(self.database_url)
+                with db_manager.session_scope() as session:
+                    Base.metadata.create_all(bind=session.get_bind())
+                    repo = SettingsRepository(session)
+                    repo.initialize_defaults()
+                    by_timeframe = repo.get('last_processed_candle_by_timeframe', default={}) or {}
+                raw = by_timeframe.get(self.timeframe)
+                return datetime.fromisoformat(raw) if raw else None
+
+            def save_last_processed_candle(candle_time: datetime):
+                db_manager = DatabaseManager(self.database_url)
+                with db_manager.session_scope() as session:
+                    Base.metadata.create_all(bind=session.get_bind())
+                    repo = SettingsRepository(session)
+                    repo.initialize_defaults()
+                    setting = repo.get_setting('last_processed_candle_by_timeframe')
+                    if setting:
+                        by_timeframe = setting.get_typed_value() or {}
+                        by_timeframe[self.timeframe] = candle_time.isoformat()
+                        setting.set_typed_value(by_timeframe)
+
             # GoldStrategy.evaluate() refuses to evaluate any rule until
             # current_idx >= max(config['trend_lookback'], 60) (silently
             # returns None, no log, no exception). The data feed/generator
@@ -267,7 +295,9 @@ class TimeframeWorker:
                 validator=validator,
                 outcome_tracker=outcome_tracker,
                 lookback_periods=lookback_periods,
-                pre_run_hook=refresh_settings
+                pre_run_hook=refresh_settings,
+                last_processed_candle_getter=get_last_processed_candle,
+                last_processed_candle_setter=save_last_processed_candle
             )
 
             # Add SHARED deduplication subscriber (same instance across ALL workers)

@@ -364,4 +364,21 @@ DEFAULT_SETTINGS = [
         'editable': False,
         'requires_restart': False,
     },
+    {
+        'key': 'last_processed_candle_by_timeframe',
+        'category': SettingCategory.SYSTEM,
+        'value': '{}',
+        'value_type': 'json',
+        'default_value': '{}',
+        'description': (
+            "Internal: JSON map of timeframe -> ISO timestamp of the last "
+            "candle actually evaluated for signals. Persisted so a worker "
+            "restarted mid-candle (e.g. by a deploy) never re-evaluates and "
+            "re-signals on a candle it already processed — see the "
+            "2026-09-08 duplicate-signal incident in "
+            "docs/superpowers/specs/strategy-ledger.md."
+        ),
+        'editable': False,
+        'requires_restart': False,
+    },
 ]
