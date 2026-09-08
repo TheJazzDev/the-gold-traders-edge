@@ -3,9 +3,15 @@
 Persistent record of every trading hypothesis tried for XAUUSD, so a future
 "has this been tested?" question has a real, honest answer instead of
 needing to be re-derived or re-tested blind. Updated as strategies are
-tried — nothing gets removed, only appended to.
+tried — nothing gets removed from *this document*, only appended to.
 
 **Format per entry:** hypothesis, source, what was tested, result, verdict.
+
+**2026-09-08:** every ruled-out rule below (5 legacy + 3 new hypotheses)
+was deleted from `GoldStrategy` itself, along with any helper/dataclass
+only they used — see commit `ba6fba7`. `gold_strategy.py` now implements
+only `order_block_retest`. This document is the only remaining record of
+what each deleted rule did and why it failed — that's the point of it.
 
 ---
 
