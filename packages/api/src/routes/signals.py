@@ -254,6 +254,31 @@ async def get_signal(signal_id: int, db: Session = Depends(get_db)):
     )
 
 
+@router.delete("/{signal_id}")
+async def delete_signal(signal_id: int, db: Session = Depends(get_db)):
+    """
+    Permanently delete a signal — for cleaning up a genuine data-entry error
+    (e.g. a duplicate signal from a worker restart re-evaluating an
+    already-processed candle; see
+    docs/superpowers/specs/strategy-ledger.md). Not for closing/cancelling a
+    real signal — use its normal status lifecycle for that.
+
+    Args:
+        signal_id: Signal ID
+        db: Database session
+
+    Returns:
+        Confirmation of deletion
+    """
+    repo = SignalRepository(db)
+    deleted = repo.delete(signal_id)
+
+    if not deleted:
+        raise HTTPException(status_code=404, detail=f"Signal {signal_id} not found")
+
+    return {"success": True, "deleted_id": signal_id}
+
+
 @router.get("/stats/performance", response_model=PerformanceStats)
 async def get_performance_stats(
     days: Optional[int] = None,
