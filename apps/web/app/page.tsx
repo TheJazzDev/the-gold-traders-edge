@@ -23,6 +23,7 @@ import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { NavBar } from "@/components/layout/NavBar";
 import { MarketStatus } from "@/components/market/MarketStatus";
+import { SignalDetailDialog } from "@/components/dashboard/signal-detail-dialog";
 import { useSignals } from "@/lib/hooks/useSignals";
 import { apiClient } from "@/lib/api/client";
 import { formatR, formatProfitFactor } from "@/lib/utils";
@@ -48,6 +49,7 @@ export default function HomePage() {
 
   const [timeframeFilter, setTimeframeFilter] = useState<string>("all");
   const [statusFilter, setStatusFilter] = useState<string>("all");
+  const [selectedSignalId, setSelectedSignalId] = useState<number | null>(null);
   const { data, isLoading, refetch } = useSignals({
     limit: 50,
     timeframe: timeframeFilter === "all" ? undefined : timeframeFilter,
@@ -199,7 +201,16 @@ export default function HomePage() {
               const isLong = signal.direction === "LONG";
 
               return (
-                <Card key={signal.id} className="bg-white/5 border-white/10 backdrop-blur-xl hover:bg-white/10 transition-all">
+                <Card
+                  key={signal.id}
+                  onClick={() => setSelectedSignalId(signal.id)}
+                  role="button"
+                  tabIndex={0}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" || e.key === " ") setSelectedSignalId(signal.id);
+                  }}
+                  className="bg-white/5 border-white/10 backdrop-blur-xl hover:bg-white/10 transition-all cursor-pointer"
+                >
                   <div className="flex items-start justify-between mb-4 gap-2">
                     <div className="flex items-center gap-3 min-w-0">
                       <div
@@ -266,7 +277,9 @@ export default function HomePage() {
                     <div className="flex items-center gap-4 text-xs sm:text-sm">
                       <div>
                         <span className="text-gray-400">R:R </span>
-                        <span className="font-semibold text-amber-400">1:{signal.risk_reward_ratio.toFixed(2)}</span>
+                        <span className="font-semibold text-amber-400">
+                          {signal.risk_reward_ratio != null ? `1:${signal.risk_reward_ratio.toFixed(2)}` : "—"}
+                        </span>
                       </div>
                       <div>
                         <span className="text-gray-400">Confidence </span>
@@ -351,6 +364,13 @@ export default function HomePage() {
           </div>
         </div>
       </footer>
+
+      <SignalDetailDialog
+        signalId={selectedSignalId}
+        onOpenChange={(open) => {
+          if (!open) setSelectedSignalId(null);
+        }}
+      />
     </div>
   );
 }

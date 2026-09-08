@@ -14,6 +14,7 @@ import type {
   ServiceStatus,
   Setting,
   SettingsByCategory,
+  SignalDetail,
   SignalsResponse,
   StrategyPerformance,
   Trade,
@@ -76,6 +77,11 @@ class APIClient {
     timeframe?: string;
   }): Promise<SignalsResponse> {
     const response = await this.client.get("/v1/signals/history", { params });
+    return response.data;
+  }
+
+  async getSignal(id: number): Promise<SignalDetail> {
+    const response = await this.client.get(`/v1/signals/${id}`);
     return response.data;
   }
 

@@ -17,6 +17,7 @@ export type SignalStatus =
 
 export interface Signal {
   id: number;
+  reference_id: string | null;
   timestamp: string;
   symbol: string;
   timeframe: string;
@@ -26,13 +27,30 @@ export interface Signal {
   stop_loss: number;
   take_profit: number;
   confidence: number;
-  risk_pips: number;
-  reward_pips: number;
-  risk_reward_ratio: number;
+  risk_pips: number | null;
+  reward_pips: number | null;
+  risk_reward_ratio: number | null;
   status: SignalStatus;
   pnl: number | null;
   pnl_pct: number | null;
+  // Present on GET /v1/signals/{id} (SignalDetail below); the lighter list
+  // endpoint (GET /v1/signals/history, used for the browsable feed) omits
+  // these, so they're optional here rather than falsely guaranteed.
+  mt5_ticket?: number | null;
+  actual_entry?: number | null;
+  actual_exit?: number | null;
+  executed_at?: string | null;
+  closed_at?: string | null;
+  pnl_pips?: number | null;
+  notes?: string | null;
+  error_message?: string | null;
+  created_at?: string;
+  updated_at?: string;
 }
+
+/** Full detail as returned by GET /v1/signals/{id} — every optional field
+ * on Signal is guaranteed present here. */
+export type SignalDetail = Required<Signal>;
 
 export interface SignalsResponse {
   signals: Signal[];
