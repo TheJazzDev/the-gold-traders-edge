@@ -28,12 +28,10 @@ from src.worker_status import derive_worker_status
 router = APIRouter(prefix="/v1/settings", tags=["settings"])
 
 # Canonical rule keys (must match GoldStrategy.rules_enabled) with display
-# names, in the order they're evaluated.
+# names. Only order_block_retest survived validation — every other rule
+# tried was ruled out and its code deleted; see
+# docs/superpowers/specs/strategy-ledger.md for the full record.
 STRATEGY_DISPLAY_NAMES = {
-    'momentum_equilibrium': 'Momentum Equilibrium',
-    'london_session_breakout': 'London Session Breakout',
-    'golden_fibonacci': 'Golden Fibonacci',
-    'ath_retest': 'ATH Retest',
     'order_block_retest': 'Order Block Retest',
 }
 

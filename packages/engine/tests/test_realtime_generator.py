@@ -154,9 +154,7 @@ class FakeDataFeed:
 class TestStrategyLogLine:
     def test_start_logs_actual_enabled_rules(self, caplog):
         strategy = GoldStrategy()
-        for name in strategy.rules_enabled:
-            strategy.rules_enabled[name] = False
-        strategy.rules_enabled['london_session_breakout'] = True
+        strategy.rules_enabled['order_block_retest'] = False
 
         generator = RealtimeSignalGenerator(
             data_feed=FakeDataFeed(),
@@ -168,8 +166,9 @@ class TestStrategyLogLine:
             generator.start(max_iterations=0)
 
         messages = [r.message for r in caplog.records]
-        assert any("london_session_breakout" in m for m in messages), messages
-        assert not any(m == "Strategy: Momentum Equilibrium" for m in messages), messages
+        # Reflects the actual (disabled) state, not a hardcoded assumption:
+        # with the only rule off, the "Strategy: ..." line lists nothing.
+        assert "Strategy: " in messages, messages
 
 
 import pandas as pd

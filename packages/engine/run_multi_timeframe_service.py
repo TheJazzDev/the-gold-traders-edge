@@ -62,13 +62,11 @@ logger = logging.getLogger(__name__)
 # until each is independently validated the same way.
 TIMEFRAMES = ['1h']
 
-# ALL 5 PROFITABLE RULES - Unprofitable ones deleted from codebase!
+# Only order_block_retest survived shared-config, out-of-sample validation.
+# Every other rule tried (5 legacy + 3 new hypotheses) was ruled out and
+# its code deleted — see docs/superpowers/specs/strategy-ledger.md.
 PROFITABLE_RULES = [
-    'momentum_equilibrium',      # 76% WR, 293% return - ⭐ BEST
-    'london_session_breakout',   # 58.8% WR, 2.74 PF - ⭐ STRONG
-    'golden_fibonacci',          # 52.6% WR, 44% return
-    'ath_retest',                # 38% WR, 30% return
-    'order_block_retest',        # Institutional smart money zones
+    'order_block_retest',
 ]
 
 

@@ -200,32 +200,16 @@ class TestScaleBaselineConfig:
     reproduce it exactly, so generalizing tune_strategy.py to other
     timeframes doesn't silently change the already-reviewed 1H behavior."""
 
-    # The original 13 params, unchanged — plus volatility_squeeze_breakout's
-    # 3 (see docs/superpowers/specs/2026-09-08-volatility-squeeze-breakout-design.md)
-    # and fib_golden_zone_confluence's 2 (see
-    # docs/superpowers/specs/strategy-ledger.md). squeeze_lookback and
-    # liquidity_grab_lookback are candle-count params (20*4x=80, 10*4x=40 at
-    # 1H); the ratio params pass through unscaled.
+    # Only order_block_retest remains (see
+    # docs/superpowers/specs/strategy-ledger.md) — GoldStrategy.DEFAULT_CONFIG
+    # is now just these 4 keys. trend_lookback/atr_period are candle-count
+    # params (50*4x=200, 14*4x=56 at 1H); the ratio params pass through
+    # unscaled.
     EXPECTED_1H_BASELINE = {
-        'fib_tolerance': 0.015,
-        'swing_lookback': 20,
-        'swing_min_strength': 2,
         'trend_lookback': 200,
-        'strong_momentum_threshold': 0.02,
         'atr_period': 56,
         'default_rr_ratio': 2.0,
         'sl_buffer_atr': 0.3,
-        'ema_fast': 36,
-        'ema_slow': 84,
-        'rsi_period': 56,
-        'rsi_overbought': 70,
-        'rsi_oversold': 30,
-        'squeeze_lookback': 80,
-        'squeeze_atr_ratio': 0.7,
-        'breakout_buffer_atr': 0.2,
-        'liquidity_grab_lookback': 40,
-        'fib_confluence_min_rr': 2.0,
-        'pullback_window': 40,
     }
 
     def test_reproduces_the_original_1h_baseline_exactly(self):
@@ -235,22 +219,13 @@ class TestScaleBaselineConfig:
     def test_candle_count_params_scale_by_the_timeframe_ratio(self):
         scaled = scale_baseline_config(GoldStrategy.DEFAULT_CONFIG, from_minutes=240, to_minutes=15)
         # 240/15 = 16x
-        assert scaled['swing_lookback'] == 5 * 16
         assert scaled['trend_lookback'] == 50 * 16
         assert scaled['atr_period'] == 14 * 16
-        assert scaled['ema_fast'] == 9 * 16
-        assert scaled['ema_slow'] == 21 * 16
-        assert scaled['rsi_period'] == 14 * 16
 
     def test_ratio_params_pass_through_unscaled(self):
         scaled = scale_baseline_config(GoldStrategy.DEFAULT_CONFIG, from_minutes=240, to_minutes=15)
-        assert scaled['fib_tolerance'] == 0.015
         assert scaled['default_rr_ratio'] == 2.0
         assert scaled['sl_buffer_atr'] == 0.3
-        assert scaled['rsi_overbought'] == 70
-        assert scaled['rsi_oversold'] == 30
-        assert scaled['swing_min_strength'] == 2
-        assert scaled['strong_momentum_threshold'] == 0.02
 
 
 class TestRunIsolatedBacktest:
@@ -267,7 +242,7 @@ class TestRunIsolatedBacktest:
         low = np.minimum(low, np.minimum(open_prices, close))
         df = pd.DataFrame({'open': open_prices, 'high': high, 'low': low, 'close': close}, index=dates)
 
-        pf, trades, result = run_isolated_backtest(df, 'momentum_equilibrium', BASE_1H_CONFIG)
+        pf, trades, result = run_isolated_backtest(df, 'order_block_retest', BASE_1H_CONFIG)
 
         assert isinstance(pf, float)
         assert isinstance(trades, int)
@@ -287,17 +262,9 @@ class TestBuildSearchGrid:
     hand-picked SEARCH_GRID exactly."""
 
     EXPECTED_1H_GRID = {
-        'fib_tolerance': [0.010, 0.015, 0.020],
-        'swing_lookback': [14, 20, 28],
         'trend_lookback': [140, 200, 260],
         'atr_period': [40, 56, 72],
         'default_rr_ratio': [1.5, 2.0, 2.5],
-        'squeeze_lookback': [56, 80, 112],
-        'squeeze_atr_ratio': [0.5, 0.7, 0.9],
-        'breakout_buffer_atr': [0.1, 0.2, 0.3],
-        'liquidity_grab_lookback': [20, 40, 60],
-        'fib_confluence_min_rr': [1.2, 1.5, 2.0],
-        'pullback_window': [20, 40, 60],
     }
 
     def test_reproduces_the_original_1h_grid_exactly(self):
@@ -307,22 +274,17 @@ class TestBuildSearchGrid:
     def test_ratio_param_grid_is_timeframe_independent(self):
         base_15m = scale_baseline_config(GoldStrategy.DEFAULT_CONFIG, from_minutes=240, to_minutes=15)
         grid = build_search_grid(base_15m)
-        assert grid['fib_tolerance'] == [0.010, 0.015, 0.020]
         assert grid['default_rr_ratio'] == [1.5, 2.0, 2.5]
 
     def test_candle_count_grid_scales_with_the_baseline(self):
         base_15m = scale_baseline_config(GoldStrategy.DEFAULT_CONFIG, from_minutes=240, to_minutes=15)
         grid = build_search_grid(base_15m)
-        # swing_lookback baseline at 15m = 5*16 = 80; factors [0.7, 1.0, 1.4]
-        assert grid['swing_lookback'] == sorted({round(80 * f) for f in (0.7, 1.0, 1.4)})
+        # trend_lookback baseline at 15m = 50*16 = 800; factors [0.7, 1.0, 1.3]
+        assert grid['trend_lookback'] == sorted({round(800 * f) for f in (0.7, 1.0, 1.3)})
 
     def test_preserves_the_original_1h_grid_key_order(self):
         grid = build_search_grid(BASE_1H_CONFIG)
-        assert list(grid.keys()) == [
-            'fib_tolerance', 'swing_lookback', 'trend_lookback', 'atr_period', 'default_rr_ratio',
-            'squeeze_lookback', 'squeeze_atr_ratio', 'breakout_buffer_atr',
-            'liquidity_grab_lookback', 'fib_confluence_min_rr', 'pullback_window',
-        ]
+        assert list(grid.keys()) == ['trend_lookback', 'atr_period', 'default_rr_ratio']
 
 
 class TestTimeframeDefaults:

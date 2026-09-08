@@ -12,7 +12,8 @@ grid to the target timeframe's own candle duration:
 
 1. Splits the real OHLCV data for the target timeframe chronologically
    70/30 (train/test).
-2. For each of the 5 rules, independently: starts from a timeframe-scaled
+2. For each rule in RULES (only order_block_retest remains — see
+   docs/superpowers/specs/strategy-ledger.md), independently: starts from a timeframe-scaled
    baseline (the 4H candle-count lookbacks rescaled by 240/target_minutes,
    since a finer timeframe's candles cover less real time each), then does
    a one-pass coordinate search (vary one parameter at a time, keep
@@ -56,39 +57,22 @@ from backtesting.engine import BacktestEngine, TradeStatus
 # publish, not whatever GoldStrategy raw-emits before that filter runs.
 PRODUCTION_MIN_RR = 1.5
 
+# Only order_block_retest survived shared-config, out-of-sample validation.
+# Every other rule tried (5 legacy + 3 new hypotheses from a later research
+# pass) was ruled out and its code deleted — see
+# docs/superpowers/specs/strategy-ledger.md for the full record.
 RULES = [
-    'momentum_equilibrium',
-    'london_session_breakout',
-    'golden_fibonacci',
-    'ath_retest',
     'order_block_retest',
-    'volatility_squeeze_breakout',
-    'fib_golden_zone_confluence',
-    'shallow_pullback_continuation',
 ]
 
 # Params whose natural unit is "how many candles" — the same real-time
 # window needs proportionally more candles on a finer timeframe. Everything
 # else (ratios, percentages, thresholds) is timeframe-independent.
-CANDLE_COUNT_PARAMS = {
-    'swing_lookback', 'trend_lookback', 'atr_period', 'ema_fast', 'ema_slow',
-    'rsi_period', 'squeeze_lookback', 'liquidity_grab_lookback', 'pullback_window',
-}
+CANDLE_COUNT_PARAMS = {'trend_lookback', 'atr_period'}
 
-# The 13 original params tune_strategy.py tunes, plus 3 for
-# volatility_squeeze_breakout and 2 for fib_golden_zone_confluence (see
-# docs/superpowers/specs/2026-09-08-volatility-squeeze-breakout-design.md
-# and docs/superpowers/specs/strategy-ledger.md).
-# GoldStrategy.DEFAULT_CONFIG also has consolidation_min_candles/
-# consolidation_max_range_atr, which aren't part of the tuned set (rules
-# just inherit GoldStrategy's own defaults for those).
-TUNABLE_PARAMS = [
-    'fib_tolerance', 'swing_lookback', 'swing_min_strength', 'trend_lookback',
-    'strong_momentum_threshold', 'atr_period', 'default_rr_ratio', 'sl_buffer_atr',
-    'ema_fast', 'ema_slow', 'rsi_period', 'rsi_overbought', 'rsi_oversold',
-    'squeeze_lookback', 'squeeze_atr_ratio', 'breakout_buffer_atr',
-    'liquidity_grab_lookback', 'fib_confluence_min_rr', 'pullback_window',
-]
+# The params tune_strategy.py tunes, matching GoldStrategy.DEFAULT_CONFIG
+# exactly now that only order_block_retest remains.
+TUNABLE_PARAMS = ['trend_lookback', 'atr_period', 'default_rr_ratio', 'sl_buffer_atr']
 
 
 def scale_baseline_config(base_config, from_minutes, to_minutes):
@@ -114,36 +98,18 @@ BASE_1H_CONFIG = scale_baseline_config(GoldStrategy.DEFAULT_CONFIG, from_minutes
 
 # Candle-count params' search neighborhood is multiplicative factors around
 # that timeframe's scaled baseline value, not absolute candle counts — this
-# reproduces the original hand-picked 1H grid exactly (see
-# TestBuildSearchGrid.test_reproduces_the_original_1h_grid_exactly) while
-# generalizing to any timeframe.
+# reproduces the original hand-picked 1H grid exactly for the params that
+# still exist (see TestBuildSearchGrid.test_reproduces_the_original_1h_grid_exactly)
+# while generalizing to any timeframe.
 CANDLE_COUNT_GRID_FACTORS = {
-    'swing_lookback': [0.7, 1.0, 1.4],
     'trend_lookback': [0.7, 1.0, 1.3],
     'atr_period': [40 / 56, 1.0, 72 / 56],
 }
 
-# volatility_squeeze_breakout's and fib_golden_zone_confluence's own
-# candle-count params — kept separate from CANDLE_COUNT_GRID_FACTORS
-# (rather than added to it) so build_search_grid can append them AFTER the
-# original 5 grid keys below, leaving their mutual order — and the pinned
-# 1H regression fixture — untouched.
-SQUEEZE_LOOKBACK_GRID_FACTORS = [0.7, 1.0, 1.4]
-LIQUIDITY_GRAB_LOOKBACK_GRID_FACTORS = [0.5, 1.0, 1.5]
-PULLBACK_WINDOW_GRID_FACTORS = [0.5, 1.0, 1.5]
-
 # Ratio/percentage params are timeframe-independent — same absolute
 # candidates regardless of timeframe.
 RATIO_PARAM_GRID = {
-    'fib_tolerance': [0.010, 0.015, 0.020],
     'default_rr_ratio': [1.5, 2.0, 2.5],
-    'squeeze_atr_ratio': [0.5, 0.7, 0.9],
-    'breakout_buffer_atr': [0.1, 0.2, 0.3],
-    # Standard Fibonacci spacing gives a raw 38.2%->61.8% vs 61.8%->78.6%
-    # reward:risk around 1.4 (see strategy-ledger.md) — 2.0 (the plan's own
-    # stated minimum) may reject almost every real signal; this grid
-    # includes lower candidates specifically to find out.
-    'fib_confluence_min_rr': [1.2, 1.5, 2.0],
 }
 
 
@@ -151,49 +117,18 @@ def build_search_grid(base_config):
     """
     Combine the candle-count factor grid (scaled off base_config's
     already-timeframe-scaled values) with the timeframe-independent ratio
-    param grid, preserving the original SEARCH_GRID literal's key order
-    exactly (fib_tolerance, swing_lookback, trend_lookback, atr_period,
-    default_rr_ratio). tune_rule's coordinate search is order-sensitive —
-    each param is tuned against whatever earlier params in the iteration
-    have already been updated — so a different key order can change the
-    final tuned result even though dict *content* equality looks identical.
-
-    volatility_squeeze_breakout's 3 params (squeeze_lookback,
-    squeeze_atr_ratio, breakout_buffer_atr) are appended at the end, after
-    default_rr_ratio — every other rule ignores them entirely (they don't
-    appear in those rules' logic), so their position can't affect those
-    rules' tuned result; appending keeps the original 5's relative order,
-    and the regression fixture pinned to it, exactly as before.
+    param grid. tune_rule's coordinate search is order-sensitive — each
+    param is tuned against whatever earlier params in the iteration have
+    already been updated — so a different key order can change the final
+    tuned result even though dict *content* equality looks identical.
     """
-    grid = {'fib_tolerance': RATIO_PARAM_GRID['fib_tolerance']}
+    grid = {}
     for param, factors in CANDLE_COUNT_GRID_FACTORS.items():
         grid[param] = sorted({round(base_config[param] * f) for f in factors})
         if len(grid[param]) < 2:
             print(f"⚠️  Search grid for '{param}' collapsed to a single value {grid[param]} — "
                   f"this parameter's coordinate search is a no-op for this timeframe.")
     grid['default_rr_ratio'] = RATIO_PARAM_GRID['default_rr_ratio']
-
-    grid['squeeze_lookback'] = sorted({round(base_config['squeeze_lookback'] * f) for f in SQUEEZE_LOOKBACK_GRID_FACTORS})
-    if len(grid['squeeze_lookback']) < 2:
-        print("⚠️  Search grid for 'squeeze_lookback' collapsed to a single value "
-              f"{grid['squeeze_lookback']} — this parameter's coordinate search is a no-op for this timeframe.")
-    grid['squeeze_atr_ratio'] = RATIO_PARAM_GRID['squeeze_atr_ratio']
-    grid['breakout_buffer_atr'] = RATIO_PARAM_GRID['breakout_buffer_atr']
-
-    grid['liquidity_grab_lookback'] = sorted({
-        round(base_config['liquidity_grab_lookback'] * f) for f in LIQUIDITY_GRAB_LOOKBACK_GRID_FACTORS
-    })
-    if len(grid['liquidity_grab_lookback']) < 2:
-        print("⚠️  Search grid for 'liquidity_grab_lookback' collapsed to a single value "
-              f"{grid['liquidity_grab_lookback']} — this parameter's coordinate search is a no-op for this timeframe.")
-    grid['fib_confluence_min_rr'] = RATIO_PARAM_GRID['fib_confluence_min_rr']
-
-    grid['pullback_window'] = sorted({
-        round(base_config['pullback_window'] * f) for f in PULLBACK_WINDOW_GRID_FACTORS
-    })
-    if len(grid['pullback_window']) < 2:
-        print("⚠️  Search grid for 'pullback_window' collapsed to a single value "
-              f"{grid['pullback_window']} — this parameter's coordinate search is a no-op for this timeframe.")
     return grid
 
 MIN_TRAIN_TRADES = 15

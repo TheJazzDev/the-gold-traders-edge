@@ -199,9 +199,15 @@ DEFAULT_SETTINGS = [
     {
         'key': 'enabled_strategies',
         'category': SettingCategory.STRATEGIES,
-        'value': '["momentum_equilibrium", "london_session_breakout", "golden_fibonacci", "ath_retest", "order_block_retest"]',
+        # Only order_block_retest survived shared-config, out-of-sample
+        # validation — every other rule tried (5 legacy + 3 new hypotheses)
+        # was ruled out and its code deleted; see
+        # docs/superpowers/specs/strategy-ledger.md. Listing a ruled-out
+        # name here is harmless (GoldStrategy.rules_enabled simply has no
+        # such key to toggle), but there's nothing left to enable.
+        'value': '["order_block_retest"]',
         'value_type': 'json',
-        'default_value': '["momentum_equilibrium", "london_session_breakout", "golden_fibonacci", "ath_retest", "order_block_retest"]',
+        'default_value': '["order_block_retest"]',
         'description': 'List of enabled trading strategies (applied live, on the next candle close — no restart needed)',
         'editable': True,
         'requires_restart': False,

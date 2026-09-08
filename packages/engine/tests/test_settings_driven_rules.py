@@ -66,25 +66,21 @@ def run_worker_and_capture_hook(worker, tmp_path):
 
 
 class TestSettingsDrivenRuleEnabling:
-    def test_pre_run_hook_applies_enabled_strategies_from_settings(self, tmp_path):
+    def test_pre_run_hook_ignores_ruled_out_rule_names_still_listed_in_settings(self, tmp_path):
+        """Order Block Retest is the only rule GoldStrategy knows about now
+        (see docs/superpowers/specs/strategy-ledger.md) — a settings row
+        still listing a ruled-out legacy rule name must not error, it's
+        simply not something `rules_enabled` has a key for."""
         worker = make_worker(tmp_path)
         seed_settings(
             worker.database_url,
-            enabled_strategies=["momentum_equilibrium", "london_session_breakout"],
+            enabled_strategies=["momentum_equilibrium", "order_block_retest"],
         )
 
         strategy, _validator, refresh = run_worker_and_capture_hook(worker, tmp_path)
-
-        # Tuned config alone would have left only order_block_retest on.
-        assert strategy.rules_enabled["order_block_retest"] is True
-
         refresh()
 
-        assert strategy.rules_enabled["momentum_equilibrium"] is True
-        assert strategy.rules_enabled["london_session_breakout"] is True
-        assert strategy.rules_enabled["order_block_retest"] is False
-        assert strategy.rules_enabled["golden_fibonacci"] is False
-        assert strategy.rules_enabled["ath_retest"] is False
+        assert strategy.rules_enabled == {"order_block_retest": True}
 
     def test_pre_run_hook_applies_min_confidence_and_min_rr_ratio(self, tmp_path):
         worker = make_worker(tmp_path)

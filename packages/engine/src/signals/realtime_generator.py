@@ -360,14 +360,12 @@ class RealtimeSignalGenerator:
         self.outcome_tracker = outcome_tracker
         self.pre_run_hook = pre_run_hook
 
-        # Initialize strategy (Momentum Equilibrium only by default)
+        # Initialize strategy. GoldStrategy's own default (order_block_retest
+        # — the only validated rule, see strategy-ledger.md) already applies
+        # when no explicit strategy is passed.
         if strategy is None:
             self.strategy = GoldStrategy()
-            # Disable all rules except momentum_equilibrium
-            for rule_name in self.strategy.rules_enabled.keys():
-                self.strategy.rules_enabled[rule_name] = False
-            self.strategy.rules_enabled['momentum_equilibrium'] = True
-            logger.info("✅ Strategy initialized: Momentum Equilibrium only")
+            logger.info("✅ Strategy initialized with defaults (order_block_retest)")
         else:
             self.strategy = strategy
 
