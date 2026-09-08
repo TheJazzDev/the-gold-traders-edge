@@ -95,6 +95,26 @@ class GoldStrategy:
         'default_rr_ratio': 2.0,
         'sl_buffer_atr': 0.3,
 
+        # Volatility squeeze breakout (see
+        # docs/superpowers/specs/2026-09-08-volatility-squeeze-breakout-design.md)
+        'squeeze_lookback': 20,
+        'squeeze_atr_ratio': 0.7,
+        'breakout_buffer_atr': 0.2,
+
+        # Fibonacci Golden Zone Confluence (a faithful implementation of the
+        # user's own trading plan — see docs/superpowers/specs/strategy-ledger.md)
+        'liquidity_grab_lookback': 10,
+        'fib_confluence_min_rr': 2.0,
+        # How many recent candles the liquidity-grab/structure-retest
+        # confirmations are allowed to have happened within, rather than
+        # requiring them on the exact same candle as the 61.8% touch — see
+        # strategy-ledger.md's diagnostic (requiring same-candle alignment
+        # for all 4 conditions collapsed to ~0.15% of candles). 11 is where
+        # a full-dataset feasibility sweep found the best trade-count/PF
+        # tradeoff (window<11 too rare to evaluate, window>11 dilutes into
+        # noise) — see strategy-ledger.md.
+        'confluence_window': 11,
+
         # EMA periods
         'ema_fast': 9,
         'ema_slow': 21,
@@ -153,6 +173,14 @@ class GoldStrategy:
 
             # Isolated real-data backtest: 118 trades, 41.5% win rate, PF 1.35, +48.6%
             'order_block_retest': True,
+
+            # Not yet validated — disabled until it survives the same
+            # train/test + shared-config gate as the other 5 (see
+            # docs/superpowers/specs/2026-09-08-volatility-squeeze-breakout-design.md).
+            'volatility_squeeze_breakout': False,
+
+            # Not yet validated — see docs/superpowers/specs/strategy-ledger.md.
+            'fib_golden_zone_confluence': False,
         }
 
         # Override with enabled_rules if provided
@@ -208,6 +236,16 @@ class GoldStrategy:
 
         if self.rules_enabled.get('ath_retest'):
             result = self._ath_retest(df, current_idx)
+            if result.triggered:
+                results.append(result)
+
+        if self.rules_enabled.get('volatility_squeeze_breakout'):
+            result = self._volatility_squeeze_breakout(df, current_idx)
+            if result.triggered:
+                results.append(result)
+
+        if self.rules_enabled.get('fib_golden_zone_confluence'):
+            result = self._fib_golden_zone_confluence(df, current_idx)
             if result.triggered:
                 results.append(result)
 
@@ -469,6 +507,30 @@ class GoldStrategy:
                         'index': i
                     }
 
+        return None
+
+    def _detect_liquidity_grab(self, df: pd.DataFrame, idx: int, lookback: int = 10) -> Optional[str]:
+        """
+        Detect a liquidity grab (stop hunt): price wicks beyond a recent
+        swing low/high — sweeping resting stop orders — then closes back
+        inside the prior range on the same candle, signaling a reversal
+        setup rather than genuine continuation. The lookback window is the
+        candles strictly BEFORE idx, matching the same "don't let the
+        candle under test contaminate its own reference range" pattern used
+        by _volatility_squeeze_breakout.
+        """
+        if idx < lookback:
+            return None
+
+        window = df.iloc[idx - lookback:idx]
+        prior_low = window['low'].min()
+        prior_high = window['high'].max()
+        current = df.iloc[idx]
+
+        if current['low'] < prior_low and current['close'] > prior_low:
+            return 'bullish'
+        if current['high'] > prior_high and current['close'] < prior_high:
+            return 'bearish'
         return None
 
     # ==================== ORIGINAL TRADING RULES ====================
@@ -826,6 +888,192 @@ class GoldStrategy:
         result.take_profit = take_profit
         result.confidence = min(confidence, 1.0)
         result.notes = f"{ob['type']} order block retest"
+
+        return result
+
+    def _volatility_squeeze_breakout(self, df: pd.DataFrame, idx: int) -> RuleResult:
+        """
+        Volatility Squeeze Breakout.
+
+        Gold characteristically chops in a tight range through low-news
+        periods, then expands sharply on real catalysts (Fed decisions,
+        real-yield moves, USD strength shifts, geopolitical shocks). This
+        detects the contraction (ATR genuinely below its own recent
+        average, not just a narrow closing-price range) and trades the
+        breakout once price closes decisively outside the range that
+        contraction traded in.
+
+        The squeeze/consolidation window is measured over the
+        `squeeze_lookback` candles strictly BEFORE `idx` — the candle under
+        test is never included in its own "was this a squeeze" check, so a
+        large breakout candle can't inflate the ATR reading that's supposed
+        to describe the calm before it.
+
+        See docs/superpowers/specs/2026-09-08-volatility-squeeze-breakout-design.md
+        """
+        result = RuleResult(rule_name="Volatility Squeeze Breakout", triggered=False)
+
+        lookback = self.config['squeeze_lookback']
+        if idx < lookback + self.config['atr_period']:
+            return result
+
+        atr_series = self.ta.calculate_atr(period=self.config['atr_period'])
+        if len(atr_series) < lookback + 2:
+            return result
+
+        # Evaluated as of the candle before idx — see docstring.
+        pre_breakout_atr = atr_series.iloc[-2]
+        squeeze_reference_atr = atr_series.iloc[-(lookback + 1):-1].mean()
+        if pd.isna(pre_breakout_atr) or pd.isna(squeeze_reference_atr) or squeeze_reference_atr == 0:
+            return result
+
+        is_squeezed = pre_breakout_atr < self.config['squeeze_atr_ratio'] * squeeze_reference_atr
+        if not is_squeezed:
+            return result
+
+        window = df.iloc[idx - lookback:idx]
+        range_high = window['high'].max()
+        range_low = window['low'].min()
+
+        current = df.iloc[idx]
+        buffer = pre_breakout_atr * self.config['breakout_buffer_atr']
+
+        if current['close'] > range_high + buffer:
+            breakout_direction = 'up'
+        elif current['close'] < range_low - buffer:
+            breakout_direction = 'down'
+        else:
+            return result
+
+        pattern = self._detect_reversal_pattern(df, idx)
+        if breakout_direction == 'up' and pattern and 'bearish' in pattern:
+            return result
+        if breakout_direction == 'down' and pattern and 'bullish' in pattern:
+            return result
+
+        if breakout_direction == 'up':
+            direction = TradeDirection.LONG
+            entry_price = current['close']
+            stop_loss = range_low - (pre_breakout_atr * self.config['sl_buffer_atr'])
+            risk = entry_price - stop_loss
+            take_profit = entry_price + (risk * self.config['default_rr_ratio'])
+        else:
+            direction = TradeDirection.SHORT
+            entry_price = current['close']
+            stop_loss = range_high + (pre_breakout_atr * self.config['sl_buffer_atr'])
+            risk = stop_loss - entry_price
+            take_profit = entry_price - (risk * self.config['default_rr_ratio'])
+
+        if risk <= 0:
+            return result
+
+        trend = self.ta.detect_trend(lookback=30)
+        confidence = 0.5
+        if (breakout_direction == 'up' and trend == TrendDirection.UPTREND) or \
+           (breakout_direction == 'down' and trend == TrendDirection.DOWNTREND):
+            confidence += 0.15
+
+        # Tighter compression (relative to the squeeze_atr_ratio threshold)
+        # is more likely a real regime change than noise.
+        compression = 1.0 - (pre_breakout_atr / squeeze_reference_atr)
+        confidence += min(compression, 0.5) * 0.2
+
+        result.triggered = True
+        result.direction = direction
+        result.entry_price = entry_price
+        result.stop_loss = stop_loss
+        result.take_profit = take_profit
+        result.confidence = min(confidence, 1.0)
+        result.notes = f"volatility squeeze breakout ({breakout_direction})"
+
+        return result
+
+    def _fib_golden_zone_confluence(self, df: pd.DataFrame, idx: int) -> RuleResult:
+        """
+        Fibonacci Golden Zone Confluence — a faithful implementation of the
+        user's own XAU/USD trading plan (see
+        docs/superpowers/specs/strategy-ledger.md), not a generic pattern.
+
+        Entry at the 61.8% retracement, ONLY if ALL of the following hold:
+          - it aligns with an Order Block in the same direction (checked at
+            the current candle — price is retesting it right now)
+          - a liquidity grab in the same direction happened within the last
+            `confluence_window` candles (not necessarily the exact same one
+            as the 61.8% touch — see strategy-ledger.md's diagnostic:
+            requiring same-candle alignment for all 4 conditions collapsed
+            to ~0.15% of candles with zero direction-matched cases)
+          - market structure confirmed a retest of broken structure
+            (BOS/CHoCH) within that same window
+        Stop loss sits just beyond the 78.6% level (the plan's "deep
+        discount" extreme) — interpreted here as an ATR buffer past 78.6% in
+        the adverse direction, matching how every other rule in this file
+        buffers a structural stop level; take profit is the 38.2% level
+        directly, NOT an RR-multiple like every other rule, since the plan
+        specifies a fixed retracement target. A trade whose resulting R:R
+        falls under the plan's own stated minimum (fib_confluence_min_rr,
+        default 2.0 — "take only trades with a minimum 1:2 R:R") is
+        rejected even if every confluence condition is met.
+        """
+        result = RuleResult(rule_name="Fibonacci Golden Zone Confluence", triggered=False)
+
+        fib = self._get_fib_zones(df, idx)
+        if fib is None:
+            return result
+
+        current = df.iloc[idx]
+        if not self._is_near_level(current['close'], fib.level_618):
+            return result
+
+        ob = self._detect_order_block(df, idx)
+        if ob is None:
+            return result
+
+        expected_bias = 'bullish' if fib.direction == 'up' else 'bearish'
+        if ob['type'] != expected_bias:
+            return result
+
+        window_start = max(0, idx - self.config['confluence_window'])
+        grab_seen = any(
+            self._detect_liquidity_grab(df, i, lookback=self.config['liquidity_grab_lookback']) == expected_bias
+            for i in range(window_start, idx + 1)
+        )
+        if not grab_seen:
+            return result
+
+        structure_seen = any(
+            self._detect_market_structure(df, i) in (MarketStructure.BOS, MarketStructure.CHOCH)
+            for i in range(window_start, idx + 1)
+        )
+        if not structure_seen:
+            return result
+
+        atr = self.ta.calculate_atr(period=self.config['atr_period']).iloc[-1]
+
+        if fib.direction == 'up':
+            direction = TradeDirection.LONG
+            entry_price = current['close']
+            stop_loss = fib.level_786 - (atr * self.config['sl_buffer_atr'])
+            take_profit = fib.level_382
+        else:
+            direction = TradeDirection.SHORT
+            entry_price = current['close']
+            stop_loss = fib.level_786 + (atr * self.config['sl_buffer_atr'])
+            take_profit = fib.level_382
+
+        risk = abs(entry_price - stop_loss)
+        reward = abs(take_profit - entry_price)
+        if risk <= 0 or reward <= 0:
+            return result
+        if reward / risk < self.config['fib_confluence_min_rr']:
+            return result
+
+        result.triggered = True
+        result.direction = direction
+        result.entry_price = entry_price
+        result.stop_loss = stop_loss
+        result.take_profit = take_profit
+        result.confidence = 0.7  # every confluence condition already required to reach here
+        result.notes = "61.8% + order block + liquidity grab + structure retest"
 
         return result
 
