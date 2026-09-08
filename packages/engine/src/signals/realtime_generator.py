@@ -571,7 +571,15 @@ class RealtimeSignalGenerator:
         except KeyboardInterrupt:
             logger.info("\n⏹️  Stopped by user")
         except Exception as e:
+            # Log and re-raise (rather than swallow) — a caller running this
+            # in a worker thread (TimeframeWorker._run()) has its own
+            # except-block that marks the worker as no longer running,
+            # which restart_if_needed() depends on to detect and relaunch a
+            # dead worker. Swallowing this here used to leave that worker
+            # permanently marked "running" while the thread had actually
+            # ended — see docs/superpowers/specs/strategy-ledger.md.
             logger.error(f"❌ Fatal error: {e}", exc_info=True)
+            raise
         finally:
             self.stop()
 

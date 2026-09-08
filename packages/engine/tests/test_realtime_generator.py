@@ -145,10 +145,85 @@ class FakeDataFeed:
 
     def get_latest_candles(self, count):
         import pandas as pd
-        return pd.DataFrame()  # Empty DataFrame stops iteration
+        return pd.DataFrame()  # Empty DataFrame -> run_once() is a no-op
 
     def wait_for_candle_close(self, check_interval):
-        raise StopIteration  # Exit loop immediately
+        pass
+
+
+class RaisingDataFeed:
+    """A data feed whose wait_for_candle_close blows up mid-loop, simulating
+    a genuine internal failure (the kind that used to leave a
+    TimeframeWorker zombied — is_running stuck True while the thread had
+    actually died; see docs/superpowers/specs/strategy-ledger.md)."""
+    symbol = "XAUUSD"
+    timeframe = "1h"
+    is_connected = True
+
+    def connect(self):
+        return True
+
+    def disconnect(self):
+        return True
+
+    def get_latest_candles(self, count):
+        import pandas as pd
+        return pd.DataFrame()
+
+    def wait_for_candle_close(self, check_interval):
+        raise RuntimeError("data feed exploded")
+
+
+class TestStartPropagatesRealFailures:
+    """Regression coverage: start() used to swallow ANY exception from
+    inside its loop (logging it, then returning normally via `finally:
+    self.stop()`), which meant TimeframeWorker._run()'s own
+    `except Exception: self.is_running = False` — the thing
+    restart_if_needed() depends on to detect and relaunch a dead worker —
+    never fired for a failure inside the running loop, only for a setup
+    failure before generator.start() was even called. A worker that died
+    this way stayed marked "running" forever and restart_if_needed()
+    (which checks `if self.is_running: return False`) never touched it."""
+
+    def test_a_genuine_exception_propagates_after_being_logged(self, caplog):
+        generator = RealtimeSignalGenerator(
+            data_feed=RaisingDataFeed(),
+            validator=SignalValidator(),
+        )
+
+        with caplog.at_level(logging.ERROR):
+            with pytest.raises(RuntimeError, match="data feed exploded"):
+                generator.start()
+
+        assert any("Fatal error" in r.message for r in caplog.records)
+
+    def test_stop_still_runs_before_the_exception_propagates(self):
+        generator = RealtimeSignalGenerator(
+            data_feed=RaisingDataFeed(),
+            validator=SignalValidator(),
+        )
+
+        with pytest.raises(RuntimeError):
+            generator.start()
+
+        assert generator.is_running is False
+
+    def test_keyboard_interrupt_is_still_swallowed_gracefully(self):
+        """Ctrl+C during interactive/direct use must NOT propagate as a
+        crash — only genuine failures should, so TimeframeWorker can tell
+        the difference between a deliberate stop and a real death."""
+        class InterruptingDataFeed(RaisingDataFeed):
+            def wait_for_candle_close(self, check_interval):
+                raise KeyboardInterrupt
+
+        generator = RealtimeSignalGenerator(
+            data_feed=InterruptingDataFeed(),
+            validator=SignalValidator(),
+        )
+
+        generator.start()  # must not raise
+
+        assert generator.is_running is False
 
 
 class TestStrategyLogLine:
@@ -163,7 +238,7 @@ class TestStrategyLogLine:
         )
 
         with caplog.at_level(logging.INFO):
-            generator.start(max_iterations=0)
+            generator.start(max_iterations=1)  # bound the loop; see FakeDataFeed
 
         messages = [r.message for r in caplog.records]
         # Reflects the actual (disabled) state, not a hardcoded assumption:

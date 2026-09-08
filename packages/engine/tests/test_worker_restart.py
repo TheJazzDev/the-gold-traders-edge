@@ -5,13 +5,17 @@ Regression coverage for the fix: the monitor loop used to only log
 restarting it, so a dead worker (e.g. a data feed hiccup) stayed dead
 until a full manual redeploy while /health kept reporting healthy.
 """
+import json
 import sys
 from pathlib import Path
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
+sys.path.insert(0, str(Path(__file__).parent.parent / 'src'))
 
+import run_multi_timeframe_service as svc_module
 from run_multi_timeframe_service import TimeframeWorker
+from signals.gold_strategy import GoldStrategy
 
 
 def _worker():
@@ -94,3 +98,40 @@ class TestRestartIfNeeded:
         assert first is True
         assert second is False
         worker.start.assert_called_once()
+
+
+class TestRunMarksWorkerDeadOnGeneratorFailure:
+    """Regression coverage: RealtimeSignalGenerator.start() used to swallow
+    any exception raised inside its own running loop (log it, then return
+    normally), so TimeframeWorker._run()'s `except Exception:
+    self.is_running = False` — the thing restart_if_needed() depends on to
+    detect and relaunch a dead worker — never fired for that failure mode.
+    The worker stayed marked "running" forever while its thread had
+    actually ended, and restart_if_needed() (which checks `if
+    self.is_running: return False`) permanently skipped it. See
+    docs/superpowers/specs/strategy-ledger.md."""
+
+    def test_is_running_becomes_false_when_generator_start_raises(self, tmp_path):
+        worker = TimeframeWorker(
+            timeframe='1h',
+            database_url=f"sqlite:///{tmp_path / 'db.sqlite'}",
+            shared_dedup_subscriber=MagicMock(),
+        )
+        worker.is_running = True  # set by start(), as it would be for real
+
+        tuned_dir = tmp_path / "tuned_configs"
+        tuned_dir.mkdir(exist_ok=True)
+        (tuned_dir / "1h.json").write_text(json.dumps({
+            "config": {**GoldStrategy.DEFAULT_CONFIG, "trend_lookback": 200},
+            "enabled_rules": ["order_block_retest"],
+            "expiry_hours": 143,
+        }))
+
+        with patch.object(svc_module, "__file__", str(tmp_path / "run_multi_timeframe_service.py")), \
+             patch.object(svc_module, "create_datafeed"), \
+             patch.object(svc_module, "SignalOutcomeTracker"), \
+             patch.object(svc_module, "RealtimeSignalGenerator") as mock_generator_cls:
+            mock_generator_cls.return_value.start.side_effect = RuntimeError("data feed exploded")
+            worker._run()
+
+        assert worker.is_running is False
