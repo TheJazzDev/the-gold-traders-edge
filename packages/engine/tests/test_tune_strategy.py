@@ -225,6 +225,7 @@ class TestScaleBaselineConfig:
         'breakout_buffer_atr': 0.2,
         'liquidity_grab_lookback': 40,
         'fib_confluence_min_rr': 2.0,
+        'pullback_window': 40,
     }
 
     def test_reproduces_the_original_1h_baseline_exactly(self):
@@ -296,6 +297,7 @@ class TestBuildSearchGrid:
         'breakout_buffer_atr': [0.1, 0.2, 0.3],
         'liquidity_grab_lookback': [20, 40, 60],
         'fib_confluence_min_rr': [1.2, 1.5, 2.0],
+        'pullback_window': [20, 40, 60],
     }
 
     def test_reproduces_the_original_1h_grid_exactly(self):
@@ -319,7 +321,7 @@ class TestBuildSearchGrid:
         assert list(grid.keys()) == [
             'fib_tolerance', 'swing_lookback', 'trend_lookback', 'atr_period', 'default_rr_ratio',
             'squeeze_lookback', 'squeeze_atr_ratio', 'breakout_buffer_atr',
-            'liquidity_grab_lookback', 'fib_confluence_min_rr',
+            'liquidity_grab_lookback', 'fib_confluence_min_rr', 'pullback_window',
         ]
 
 

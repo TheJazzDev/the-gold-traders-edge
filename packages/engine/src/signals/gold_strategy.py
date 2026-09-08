@@ -105,6 +105,12 @@ class GoldStrategy:
         # user's own trading plan — see docs/superpowers/specs/strategy-ledger.md)
         'liquidity_grab_lookback': 10,
         'fib_confluence_min_rr': 2.0,
+        # Shallow Pullback Continuation (see
+        # docs/superpowers/specs/strategy-ledger.md) — how many recent
+        # candles the 23.6% touch is allowed to have happened within,
+        # before the structure-break entry candle.
+        'pullback_window': 10,
+
         # How many recent candles the liquidity-grab/structure-retest
         # confirmations are allowed to have happened within, rather than
         # requiring them on the exact same candle as the 61.8% touch — see
@@ -181,6 +187,9 @@ class GoldStrategy:
 
             # Not yet validated — see docs/superpowers/specs/strategy-ledger.md.
             'fib_golden_zone_confluence': False,
+
+            # Not yet validated — see docs/superpowers/specs/strategy-ledger.md.
+            'shallow_pullback_continuation': False,
         }
 
         # Override with enabled_rules if provided
@@ -246,6 +255,11 @@ class GoldStrategy:
 
         if self.rules_enabled.get('fib_golden_zone_confluence'):
             result = self._fib_golden_zone_confluence(df, current_idx)
+            if result.triggered:
+                results.append(result)
+
+        if self.rules_enabled.get('shallow_pullback_continuation'):
+            result = self._shallow_pullback_continuation(df, current_idx)
             if result.triggered:
                 results.append(result)
 
@@ -1074,6 +1088,84 @@ class GoldStrategy:
         result.take_profit = take_profit
         result.confidence = 0.7  # every confluence condition already required to reach here
         result.notes = "61.8% + order block + liquidity grab + structure retest"
+
+        return result
+
+    def _shallow_pullback_continuation(self, df: pd.DataFrame, idx: int) -> RuleResult:
+        """
+        Shallow Pullback Continuation — from the user's own trading plan
+        hard fact: "In strong bullish moves, price may only pull back to
+        the 23.6% level before continuing." Confirmation = a small
+        consolidation near 23.6%, followed by a break of structure in the
+        trend direction. See docs/superpowers/specs/strategy-ledger.md.
+
+        Unlike Fibonacci Golden Zone Confluence (deep pullback, reversal),
+        this trades trend CONTINUATION off a shallow pullback: the pullback
+        must have touched 23.6% within the last `pullback_window` candles
+        AND never traded through the deeper 38.2% level in that window (a
+        deeper move means it's no longer a "shallow" pullback), then enters
+        on the current candle's structure-break confirmation.
+        """
+        result = RuleResult(rule_name="Shallow Pullback Continuation", triggered=False)
+
+        fib = self._get_fib_zones(df, idx)
+        if fib is None:
+            return result
+
+        trend = self.ta.detect_trend(lookback=self.config['trend_lookback'])
+        if fib.direction == 'up' and trend != TrendDirection.UPTREND:
+            return result
+        if fib.direction == 'down' and trend != TrendDirection.DOWNTREND:
+            return result
+
+        window_start = max(0, idx - self.config['pullback_window'])
+        window = df.iloc[window_start:idx + 1]
+
+        touched_236 = any(self._is_near_level(c, fib.level_236) for c in window['close'])
+        if not touched_236:
+            return result
+
+        if fib.direction == 'up':
+            stayed_shallow = window['low'].min() >= fib.level_382
+        else:
+            stayed_shallow = window['high'].max() <= fib.level_382
+        if not stayed_shallow:
+            return result
+
+        structure = self._detect_market_structure(df, idx)
+        if structure not in (MarketStructure.BOS, MarketStructure.CHOCH):
+            return result
+
+        current = df.iloc[idx]
+        atr = self.ta.calculate_atr(period=self.config['atr_period']).iloc[-1]
+
+        if fib.direction == 'up':
+            direction = TradeDirection.LONG
+            entry_price = current['close']
+            stop_loss = fib.level_236 - (atr * self.config['sl_buffer_atr'])
+            risk = entry_price - stop_loss
+            take_profit = entry_price + (risk * self.config['default_rr_ratio'])
+        else:
+            direction = TradeDirection.SHORT
+            entry_price = current['close']
+            stop_loss = fib.level_236 + (atr * self.config['sl_buffer_atr'])
+            risk = stop_loss - entry_price
+            take_profit = entry_price - (risk * self.config['default_rr_ratio'])
+
+        if risk <= 0:
+            return result
+
+        confidence = 0.55
+        if structure == MarketStructure.BOS:
+            confidence += 0.15
+
+        result.triggered = True
+        result.direction = direction
+        result.entry_price = entry_price
+        result.stop_loss = stop_loss
+        result.take_profit = take_profit
+        result.confidence = min(confidence, 1.0)
+        result.notes = "shallow pullback to 23.6% + trend continuation structure break"
 
         return result
 

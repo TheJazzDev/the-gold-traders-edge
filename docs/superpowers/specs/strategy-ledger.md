@@ -128,15 +128,56 @@ more signal volume — see "New strategies, gold-only" below instead.
 
 ---
 
+### Shallow Pullback Continuation
+- **Source:** the user's own trading plan hard fact #3: "In strong bullish
+  moves, price may only pull back to the 23.6% level before continuing" —
+  trend CONTINUATION off a shallow pullback, mechanically distinct from
+  every other rule tried this session (all reversal/zone-retest concepts;
+  this is the only continuation hypothesis).
+- **Method:** confirmed trend (`detect_trend`) in the fib zone's direction,
+  price touched 23.6% within a `pullback_window` (default 10 candles) but
+  never traded through the deeper 38.2% level in that window (still
+  "shallow"), then entry on a structure-break (BOS/CHoCH) confirmation
+  candle.
+- **Tested directly on a real train/test split** (skipped the full-dataset
+  sweep step this time — the previous two strategies' sweep-then-overfit
+  pattern made clear that manual sweeping before a real test-set check adds
+  overfitting risk, not signal): train PF 1.456 (only 7 trades) → **test PF
+  0.485 (5 trades)**. Thin sample on both sides, unprofitable out of
+  sample.
+- **Verdict:** ❌ Ruled out. Also confirms the shallow-pullback-236 event is
+  itself fairly rare at 1H on gold, before even considering the structure
+  confirmation on top of it.
+
+---
+
+## Session methodology note
+
+The squeeze breakout and fib confluence attempts both went through a
+"sweep many parameter combos on the full dataset, pick the best-looking
+one" step before real train/test validation — and both looked strong on
+the full-dataset sweep (PF 2.35, PF 1.39) then collapsed on a genuine
+held-out test set. That pattern is itself informative: **a full-dataset
+parameter sweep followed by cherry-picking the winner is a multiple-
+comparisons trap** — searching 48+ combinations makes finding one that
+looks good by chance alone the *expected* outcome, not evidence of real
+edge. Shallow Pullback Continuation skipped that step (straight to a real
+train/test split) and reached the same ruled-out conclusion faster and
+more honestly. Future strategy attempts should default to real train/test
+validation from the start, not a full-dataset sweep-then-validate.
+
 ## Open questions / not yet tried
 
 - Other "hard facts" from the user's trading plan not yet built:
-  23.6% shallow pullback continuation in strong trend; consolidation-then-
-  ATH-breakout-retest (partially overlaps existing `ath_retest`); 50% rule
-  in strong momentum (already IS what `momentum_equilibrium` tests —
+  consolidation-then-ATH-breakout-retest (partially overlaps existing
+  `ath_retest`, which already scores PF < 1.0 on gold — low priority); 50%
+  rule in strong momentum (already IS what `momentum_equilibrium` tests —
   already ruled out, PF 0.89 on gold).
 - Web research (2026-09-08) mostly surfaced already-implemented concepts
   (liquidity sweeps, market structure) from low-credibility marketing
   content, not novel testable ideas — Point of Control / volume-profile
   "magnet" effect is one real candidate not yet tried (needs reliable
   volume data; yfinance's GC=F volume field would need verification first).
+- All 3 new strategies this session were tested only on 1H. None were
+  tried on 15m (the other timeframe with any existing tuning
+  infrastructure) — untested, not ruled out, for that timeframe.

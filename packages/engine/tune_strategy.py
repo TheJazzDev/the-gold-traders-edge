@@ -64,6 +64,7 @@ RULES = [
     'order_block_retest',
     'volatility_squeeze_breakout',
     'fib_golden_zone_confluence',
+    'shallow_pullback_continuation',
 ]
 
 # Params whose natural unit is "how many candles" — the same real-time
@@ -71,7 +72,7 @@ RULES = [
 # else (ratios, percentages, thresholds) is timeframe-independent.
 CANDLE_COUNT_PARAMS = {
     'swing_lookback', 'trend_lookback', 'atr_period', 'ema_fast', 'ema_slow',
-    'rsi_period', 'squeeze_lookback', 'liquidity_grab_lookback',
+    'rsi_period', 'squeeze_lookback', 'liquidity_grab_lookback', 'pullback_window',
 }
 
 # The 13 original params tune_strategy.py tunes, plus 3 for
@@ -86,7 +87,7 @@ TUNABLE_PARAMS = [
     'strong_momentum_threshold', 'atr_period', 'default_rr_ratio', 'sl_buffer_atr',
     'ema_fast', 'ema_slow', 'rsi_period', 'rsi_overbought', 'rsi_oversold',
     'squeeze_lookback', 'squeeze_atr_ratio', 'breakout_buffer_atr',
-    'liquidity_grab_lookback', 'fib_confluence_min_rr',
+    'liquidity_grab_lookback', 'fib_confluence_min_rr', 'pullback_window',
 ]
 
 
@@ -129,6 +130,7 @@ CANDLE_COUNT_GRID_FACTORS = {
 # 1H regression fixture — untouched.
 SQUEEZE_LOOKBACK_GRID_FACTORS = [0.7, 1.0, 1.4]
 LIQUIDITY_GRAB_LOOKBACK_GRID_FACTORS = [0.5, 1.0, 1.5]
+PULLBACK_WINDOW_GRID_FACTORS = [0.5, 1.0, 1.5]
 
 # Ratio/percentage params are timeframe-independent — same absolute
 # candidates regardless of timeframe.
@@ -185,6 +187,13 @@ def build_search_grid(base_config):
         print("⚠️  Search grid for 'liquidity_grab_lookback' collapsed to a single value "
               f"{grid['liquidity_grab_lookback']} — this parameter's coordinate search is a no-op for this timeframe.")
     grid['fib_confluence_min_rr'] = RATIO_PARAM_GRID['fib_confluence_min_rr']
+
+    grid['pullback_window'] = sorted({
+        round(base_config['pullback_window'] * f) for f in PULLBACK_WINDOW_GRID_FACTORS
+    })
+    if len(grid['pullback_window']) < 2:
+        print("⚠️  Search grid for 'pullback_window' collapsed to a single value "
+              f"{grid['pullback_window']} — this parameter's coordinate search is a no-op for this timeframe.")
     return grid
 
 MIN_TRAIN_TRADES = 15
