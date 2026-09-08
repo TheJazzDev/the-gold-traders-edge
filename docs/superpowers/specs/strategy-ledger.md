@@ -15,6 +15,48 @@ what each deleted rule did and why it failed — that's the point of it.
 
 ---
 
+## Operational incidents (not strategy hypotheses, but recorded here for the same reason)
+
+### 2026-09-08: worker restart re-signaled on an already-processed candle
+
+Three near-identical Order Block Retest signals fired for what should have
+been one setup: `OBR-0908-01` (16:00 candle, legitimate — the same bearish
+order block zone was independently retested 2 hours apart, which the
+strategy has no memory to suppress by design) and `OBR-0908-02`/`03`/`04`
+(all nominally the "18:00" candle, ~3-20 min apart).
+
+**Root cause:** a deploy restarts the worker process. `RealtimeSignalGenerator.start()`'s
+loop evaluates the current candle *immediately* on entry, before any
+candle-close wait, and had no memory across restarts of which candle it
+last processed. Since Yahoo Finance's 1H gold bar isn't guaranteed
+finalized the moment it's fetched (own docstring: "~15-20 minute delay...
+not true real-time"), each restart re-fetched the still-forming "18:00"
+bar with a slightly different close price, producing near-duplicate but
+not identical entry/SL/TP. `SignalDeduplicator`'s dedup hashes on exact
+(cent-rounded) entry/SL/TP, so it never caught this — it was designed for
+identical-price duplicates, not "same setup, price drifted because the
+candle wasn't really closed."
+
+**Compounding factor:** two follow-up deploys (fixing this bug, then
+adding a DELETE endpoint to clean up the duplicates) landed before the fix
+had a chance to record its first baseline, causing one more duplicate
+(`OBR-0908-04`) via the exact same mechanism the fix was meant to close.
+
+**Fix (commit `cf404d8`):** `RealtimeSignalGenerator.run_once()` now takes
+`last_processed_candle_getter`/`setter`; `TimeframeWorker` persists the
+last-processed candle timestamp per timeframe in the settings table
+(`last_processed_candle_by_timeframe`), so a restart — however soon after
+the previous evaluation — always skips a candle it already processed.
+Verified live: the setting correctly advanced past 18:00 to 20:00 with no
+further duplicates once the fix was deployed.
+
+**Cleanup:** signals `OBR-0908-02`, `03`, `04` were deleted (via new
+`DELETE /v1/signals/{id}`, commit `ff2e22c`) as genuine duplicates, at the
+user's request. `OBR-0908-01` was kept — it's a real, independent
+detection.
+
+---
+
 ## Validated, live
 
 ### Order Block Retest
