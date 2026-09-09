@@ -424,16 +424,17 @@ class MultiTimeframeService:
     Main service that manages multiple timeframe workers.
     """
 
-    def __init__(self, timeframes: List[str] = None, database_url: str = None, enable_trading: bool = False):
+    def __init__(self, worker_specs: List[WorkerSpec] = None, database_url: str = None, enable_trading: bool = False):
         """
         Initialize multi-timeframe service.
 
         Args:
-            timeframes: List of timeframes to monitor (default: all)
+            worker_specs: WorkerSpecs to run (default: WORKER_SPECS — all
+                configured instruments)
             database_url: Database URL (default: from env or PostgreSQL)
             enable_trading: Whether to enable auto-trading (default: False, signals only)
         """
-        self.timeframes = timeframes or TIMEFRAMES
+        self.worker_specs = worker_specs or WORKER_SPECS
         self.database_url = database_url or os.getenv(
             'DATABASE_URL',
             'postgresql://postgres:postgres@localhost:5432/gold_signals'
@@ -485,15 +486,18 @@ class MultiTimeframeService:
         print("\n" + "=" * 80)
         print("📊 MULTI-TIMEFRAME SIGNAL SERVICE")
         print("=" * 80)
-        print(f"\n🎯 Monitoring Timeframes: {', '.join(self.timeframes)}")
-        for timeframe in self.timeframes:
-            tuned_config_path = Path(__file__).parent / 'tuned_configs' / f'{timeframe}.json'
+        worker_ids = [f"{spec.symbol}:{spec.timeframe}" for spec in self.worker_specs]
+        print(f"\n🎯 Monitoring Workers: {', '.join(worker_ids)}")
+        for spec in self.worker_specs:
+            worker_id = f"{spec.symbol}:{spec.timeframe}"
+            tuned_config_path = Path(__file__).parent / 'tuned_configs' / spec.tuned_config_filename
             if tuned_config_path.exists():
                 with open(tuned_config_path) as f:
-                    enabled = json.load(f)['enabled_rules']
+                    tuned = json.load(f)
+                enabled = tuned.get('enabled_rules', list(spec.strategy_class().rules_enabled.keys()))
             else:
-                enabled = PROFITABLE_RULES
-            print(f"📈 [{timeframe}] Enabled Rules ({len(enabled)}):")
+                enabled = PROFITABLE_RULES if spec.symbol == 'XAUUSD' else []
+            print(f"📈 [{worker_id}] Rules in tuned config ({len(enabled)}):")
             for rule in enabled:
                 print(f"   ✅ {rule}")
         print(f"\n💾 Database: {self.database_url}")
@@ -505,17 +509,17 @@ class MultiTimeframeService:
         self.is_running = True
         self.start_time = datetime.now()
 
-        # Create and start workers for each timeframe
-        for timeframe in self.timeframes:
+        # Create and start one worker per configured instrument
+        for spec in self.worker_specs:
             worker = TimeframeWorker(
-                timeframe=timeframe,
+                spec=spec,
                 database_url=self.database_url,
                 shared_dedup_subscriber=self.shared_dedup_subscriber,  # SHARE the same instance
                 telegram_subscriber=self.telegram_subscriber,
                 enable_trading=self.enable_trading,
                 mt5_config=self.mt5_config
             )
-            self.workers[timeframe] = worker
+            self.workers[worker.worker_id] = worker
             worker.start()
             time.sleep(2)  # Stagger starts to avoid overwhelming the API
 
@@ -616,12 +620,12 @@ class MultiTimeframeService:
         print("=" * 80)
 
         # Show status of each worker
-        for timeframe, worker in self.workers.items():
+        for worker_id, worker in self.workers.items():
             status = "🟢 RUNNING" if worker.is_running else "🔴 STOPPED"
             signals = worker.generator.total_signals_generated if worker.generator else 0
             candles = worker.generator.total_candles_processed if worker.generator else 0
 
-            print(f"{timeframe:>4} | {status} | Candles: {candles:>5} | Signals: {signals:>3}")
+            print(f"{worker_id:>10} | {status} | Candles: {candles:>5} | Signals: {signals:>3}")
 
         print("=" * 80 + "\n")
 
@@ -734,10 +738,10 @@ def main():
     )
 
     parser.add_argument(
-        '--timeframes', '-t',
+        '--symbols', '-s',
         nargs='+',
-        choices=['5m', '15m', '30m', '1h', '4h', '1d'],
-        help='Timeframes to monitor (default: all)'
+        choices=[spec.symbol for spec in WORKER_SPECS],
+        help='Symbols to run workers for (default: all configured symbols)'
     )
 
     parser.add_argument(
@@ -763,8 +767,12 @@ def main():
         logger.info("📊 Signals-only mode - trades will NOT be executed (set --enable-trading or ENABLE_AUTO_TRADING=true to enable)")
 
     # Create and start service
+    worker_specs = (
+        [spec for spec in WORKER_SPECS if spec.symbol in args.symbols]
+        if args.symbols else None
+    )
     service = MultiTimeframeService(
-        timeframes=args.timeframes,
+        worker_specs=worker_specs,
         database_url=args.database,
         enable_trading=enable_trading
     )
