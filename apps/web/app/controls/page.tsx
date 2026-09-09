@@ -49,7 +49,13 @@ export default function ControlsPage() {
 
   const autoTrading = autoTradingSetting?.typed_value === true;
   const dryRun = dryRunSetting?.typed_value === true;
-  const enabledStrategies = strategies?.filter((s) => s.enabled).map((s) => s.key) || [];
+  // Scoped to XAUUSD only: enabled_strategies is gold's setting alone, and
+  // once enabled_forex_symbols lets a GBPUSD/EURUSD row's `enabled` go
+  // true, including those rows here would smuggle their shared rule key
+  // ("asian_range_london_breakout") into `next` below the next time someone
+  // legitimately toggles a XAUUSD row.
+  const enabledStrategies = strategies?.filter((s) => s.symbol === "XAUUSD" && s.enabled).map((s) => s.key) || [];
+  const xauStrategiesCount = strategies?.filter((s) => s.symbol === "XAUUSD").length || 0;
 
   // Only XAUUSD's rows are backed by the enabled_strategies setting.
   // GBPUSD/EURUSD share ForexSessionStrategy's single rule name
@@ -224,7 +230,7 @@ export default function ControlsPage() {
                 <div>
                   <h2 className="text-base sm:text-xl font-bold text-white">Strategy Management</h2>
                   <p className="text-xs text-gray-400 mt-0.5">
-                    {enabledStrategies.length} / {strategies?.length || 0} active — applies on the next candle close, no restart needed
+                    {enabledStrategies.length} / {xauStrategiesCount} XAUUSD active — applies on the next candle close, no restart needed
                   </p>
                 </div>
               </div>
