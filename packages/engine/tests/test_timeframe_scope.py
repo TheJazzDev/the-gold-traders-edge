@@ -9,4 +9,7 @@ import run_multi_timeframe_service as svc_module
 
 class TestTimeframeScope:
     def test_only_1h_is_configured(self):
-        assert svc_module.TIMEFRAMES == ['1h']
+        # Verify all configured worker specs use the 1h timeframe
+        assert len(svc_module.WORKER_SPECS) > 0
+        for spec in svc_module.WORKER_SPECS:
+            assert spec.timeframe == '1h'

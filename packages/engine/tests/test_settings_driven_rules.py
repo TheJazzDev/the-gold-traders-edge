@@ -27,13 +27,21 @@ from database.settings_repository import SettingsRepository
 
 
 def make_worker(tmp_path, timeframe="1h"):
-    worker = svc_module.TimeframeWorker.__new__(svc_module.TimeframeWorker)
-    worker.timeframe = timeframe
-    worker.database_url = f"sqlite:///{tmp_path / 'settings.db'}"
-    worker.shared_dedup_subscriber = MagicMock()
-    worker.telegram_subscriber = MagicMock()
-    worker.enable_trading = False
-    worker.mt5_config = None
+    # Create a spec for testing with the given timeframe
+    spec = svc_module.WorkerSpec(
+        symbol="XAUUSD",
+        strategy_class=GoldStrategy,
+        timeframe=timeframe,
+        tuned_config_filename=f"{timeframe}.json"
+    )
+    worker = svc_module.TimeframeWorker(
+        spec=spec,
+        database_url=f"sqlite:///{tmp_path / 'settings.db'}",
+        shared_dedup_subscriber=MagicMock(),
+        telegram_subscriber=MagicMock(),
+        enable_trading=False,
+        mt5_config=None
+    )
     return worker
 
 

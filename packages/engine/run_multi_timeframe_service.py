@@ -21,6 +21,7 @@ import logging
 import threading
 import time
 from datetime import datetime
+from dataclasses import dataclass
 from typing import List, Dict, Optional
 
 # Add src to path
@@ -28,6 +29,7 @@ sys.path.insert(0, str(Path(__file__).parent / 'src'))
 
 from data.realtime_feed import create_datafeed
 from signals.gold_strategy import GoldStrategy
+from signals.forex_session_strategy import ForexSessionStrategy
 from signals.realtime_generator import RealtimeSignalGenerator, SignalValidator
 from signals.subscribers import DatabaseSubscriber, LoggerSubscriber, ConsoleSubscriber
 from signals.subscribers.mt5_subscriber import MT5Subscriber
@@ -56,15 +58,32 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
-# Only 1H has been re-tuned and validated against real market data
-# (see docs/superpowers/specs/2026-08-22-signal-validation-and-outcome-tracking-design.md).
-# The other timeframes are left available in the code but not run live
-# until each is independently validated the same way.
-TIMEFRAMES = ['1h']
+@dataclass(frozen=True)
+class WorkerSpec:
+    """One (symbol, strategy_class, timeframe) worker to run live. See
+    docs/superpowers/specs/2026-09-09-gbpusd-eurusd-worker-wiring-design.md."""
+    symbol: str
+    strategy_class: type
+    timeframe: str
+    tuned_config_filename: str
 
-# Only order_block_retest survived shared-config, out-of-sample validation.
-# Every other rule tried (5 legacy + 3 new hypotheses) was ruled out and
-# its code deleted — see docs/superpowers/specs/strategy-ledger.md.
+
+# Only 1H has been re-tuned and validated against real market data for gold
+# (see docs/superpowers/specs/2026-08-22-signal-validation-and-outcome-tracking-design.md)
+# and for GBPUSD/EURUSD (see
+# docs/superpowers/specs/2026-09-09-gbpusd-asian-range-breakout-design.md).
+# GBPUSD/EURUSD ship with their rule disabled by default (see
+# enabled_forex_symbols in settings_models.py) — the worker runs live for
+# real, but generates zero signals until explicitly enabled.
+XAUUSD_1H_SPEC = WorkerSpec(symbol='XAUUSD', strategy_class=GoldStrategy, timeframe='1h', tuned_config_filename='1h.json')
+GBPUSD_1H_SPEC = WorkerSpec(symbol='GBPUSD', strategy_class=ForexSessionStrategy, timeframe='1h', tuned_config_filename='gbpusd_1h.json')
+EURUSD_1H_SPEC = WorkerSpec(symbol='EURUSD', strategy_class=ForexSessionStrategy, timeframe='1h', tuned_config_filename='eurusd_1h.json')
+
+WORKER_SPECS = [XAUUSD_1H_SPEC, GBPUSD_1H_SPEC, EURUSD_1H_SPEC]
+
+# Only order_block_retest survived shared-config, out-of-sample validation
+# on gold. Every other rule tried (5 legacy + 3 new hypotheses) was ruled
+# out and its code deleted — see docs/superpowers/specs/strategy-ledger.md.
 PROFITABLE_RULES = [
     'order_block_retest',
 ]
@@ -77,7 +96,7 @@ class TimeframeWorker:
 
     def __init__(
         self,
-        timeframe: str,
+        spec: WorkerSpec,
         database_url: str,
         shared_dedup_subscriber,  # SHARED across all workers
         telegram_subscriber=None,
@@ -85,10 +104,11 @@ class TimeframeWorker:
         mt5_config: MT5Config = None
     ):
         """
-        Initialize timeframe worker.
+        Initialize an instrument worker.
 
         Args:
-            timeframe: Timeframe to monitor (e.g., '5m', '1h', '4h')
+            spec: WorkerSpec — symbol, strategy class, timeframe, tuned
+                config filename for this worker
             database_url: Database connection URL
             shared_dedup_subscriber: Shared deduplication subscriber (same instance for all workers)
             telegram_subscriber: Shared Telegram subscriber, used here to notify on
@@ -97,7 +117,7 @@ class TimeframeWorker:
             enable_trading: Whether to enable auto-trading via MT5Subscriber
             mt5_config: MT5 configuration (required if enable_trading=True)
         """
-        self.timeframe = timeframe
+        self.spec = spec
         self.database_url = database_url
         self.shared_dedup_subscriber = shared_dedup_subscriber
         self.telegram_subscriber = telegram_subscriber
@@ -111,6 +131,18 @@ class TimeframeWorker:
         self.last_start_time: float = None
         self.restart_backoff_seconds = 10
         self.next_restart_allowed_at: float = None
+
+    @property
+    def symbol(self) -> str:
+        return self.spec.symbol
+
+    @property
+    def timeframe(self) -> str:
+        return self.spec.timeframe
+
+    @property
+    def worker_id(self) -> str:
+        return f"{self.spec.symbol}:{self.spec.timeframe}"
 
     def start(self):
         """Start the worker thread."""

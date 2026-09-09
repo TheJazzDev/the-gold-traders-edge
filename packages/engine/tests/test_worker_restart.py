@@ -20,7 +20,7 @@ from signals.gold_strategy import GoldStrategy
 
 def _worker():
     return TimeframeWorker(
-        timeframe='1h',
+        spec=svc_module.XAUUSD_1H_SPEC,
         database_url='sqlite:///:memory:',
         shared_dedup_subscriber=MagicMock(),
     )
@@ -113,7 +113,7 @@ class TestRunMarksWorkerDeadOnGeneratorFailure:
 
     def test_is_running_becomes_false_when_generator_start_raises(self, tmp_path):
         worker = TimeframeWorker(
-            timeframe='1h',
+            spec=svc_module.XAUUSD_1H_SPEC,
             database_url=f"sqlite:///{tmp_path / 'db.sqlite'}",
             shared_dedup_subscriber=MagicMock(),
         )
