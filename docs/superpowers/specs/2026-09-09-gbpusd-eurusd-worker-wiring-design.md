@@ -125,9 +125,9 @@ it (gold's existing path, unchanged); if absent, leave `rules_enabled` at
 the strategy class's own constructor default. This is safe because
 `RealtimeSignalGenerator.start()` calls `pre_run_hook()` before the first
 `run_once()` (confirmed by reading `realtime_generator.py`) — so
-`refresh_settings()` reading `enabled_strategies["GBPUSD"] == []` from the
-DB disables the rule before any evaluation happens regardless, on
-iteration 1. Similarly, fall back to `expiry_hours = 48.0` (the same
+`refresh_settings()` reading GBPUSD's absence from `enabled_forex_symbols`
+(default `[]`) disables the rule before any evaluation happens regardless,
+on iteration 1. Similarly, fall back to `expiry_hours = 48.0` (the same
 constant already used today when no tuned config exists at all) when the
 tuned config doesn't specify one.
 
@@ -155,9 +155,11 @@ its comment). Two changes:
 ### Data flow (per candle close, per worker)
 
 1. `TimeframeWorker._run()` computes `worker_id` once at thread start.
-2. `refresh_settings()` reads `enabled_strategies[spec.symbol]` (new dict
-   shape — see Settings migration) instead of a flat list, applying it to
-   `strategy.rules_enabled` exactly as today.
+2. `refresh_settings()` branches on strategy: for the `XAUUSD` worker it
+   reads `enabled_strategies` exactly as today (unchanged); for a forex
+   worker it reads `enabled_forex_symbols` and sets
+   `strategy.rules_enabled['asian_range_london_breakout'] =
+   spec.symbol in enabled_forex_symbols`.
 3. `get_last_processed_candle()`/`save_last_processed_candle()` read/write
    `last_processed_candle_by_worker[worker_id]` instead of
    `last_processed_candle_by_timeframe[timeframe]`.
@@ -166,18 +168,28 @@ its comment). Two changes:
 
 ### Settings schema changes
 
-**`enabled_strategies`: flat list → dict keyed by symbol.**
-GBPUSD and EURUSD both use `ForexSessionStrategy`'s rule name
-`'asian_range_london_breakout'` — a flat list of rule names cannot express
-"enabled for GBPUSD but not EURUSD". New shape:
-```json
-{"XAUUSD": ["order_block_retest"], "GBPUSD": [], "EURUSD": []}
-```
-Empty lists for the new symbols *are* the "shipped disabled" mechanism,
-since worker threads always start regardless (per Goals). A missing key
-for a symbol (e.g. a future 4th instrument added without updating this
-default) must be treated as `[]` — fail closed, never fall back to
-"everything enabled".
+**`enabled_strategies` is unchanged — a new setting `enabled_forex_symbols`
+is added instead.** The original plan for this design was to reshape
+`enabled_strategies` from a flat list into a dict keyed by symbol. That is
+**rejected**: `apps/web/app/controls/page.tsx:58` PUTs `enabled_strategies`
+as a flat `string[]` from a live, working admin toggle
+(`apps/web/lib/types.ts:145` types it as `string[]`; `useSettings.ts`
+invalidates the strategies query on it), and reshaping the setting's
+stored value would silently corrupt gold's own live rule-toggle UI the
+next time an admin used it — a direct violation of "don't break gold".
+
+Instead: `enabled_strategies` keeps its exact current meaning and shape
+(gold's rule names only, untouched). A **new** setting,
+`enabled_forex_symbols`, is added: a flat JSON list of symbols for which
+`ForexSessionStrategy`'s single rule (`asian_range_london_breakout`) is
+turned on — e.g. `["GBPUSD"]` once GBPUSD goes live. Default `[]` — this
+empty list *is* the "shipped disabled" mechanism for both new symbols,
+since worker threads always start regardless (per Goals). A symbol absent
+from this list (including a future 4th forex instrument) is disabled —
+fail closed, never "everything enabled" by default. This works cleanly
+because `ForexSessionStrategy` has exactly one rule; a per-symbol
+membership list is sufficient without needing per-rule granularity the
+way gold's multi-rule `enabled_strategies` does.
 
 **`last_processed_candle_by_timeframe` → `last_processed_candle_by_worker`**,
 keyed by `worker_id` instead of bare timeframe. Renamed outright rather
@@ -189,16 +201,12 @@ timeframe. Same rationale.
 
 ### Migration (live production DB, not a fresh install)
 
-Both changes above must apply automatically to the running production
-settings table, which currently holds the old shapes. Both migrations run
-inside `SettingsRepository.initialize_defaults()` (already called on
-every process start), before any worker reads the settings, so there is
-no window where a worker observes the old shape:
+Only one migration is needed now (the `enabled_strategies` reshape is no
+longer happening — see above). It runs inside
+`SettingsRepository.initialize_defaults()` (already called on every
+process start), before any worker reads settings, so there is no window
+where a worker observes a stale value:
 
-- **`enabled_strategies`**: if the stored value parses as a JSON *list*
-  (old shape), rewrite it to `{"XAUUSD": <that list>, "GBPUSD": [],
-  "EURUSD": []}` once. If it's already a dict, no-op — this must not reset
-  a value the user has since edited via the admin UI.
 - **`last_processed_candle_by_worker`**: on first read, if the key
   `"XAUUSD:1h"` is absent but the old `last_processed_candle_by_timeframe`
   setting has a `"1h"` entry, seed `"XAUUSD:1h"` from it once. This
@@ -206,6 +214,57 @@ no window where a worker observes the old shape:
   built for the 2026-09-08 incident — see `strategy-ledger.md`) across the
   deploy boundary. The old setting is left in place afterward, unused but
   harmless — nothing should depend on its absence.
+
+### API layer (`packages/api`)
+
+- **`worker_status.py`**: `derive_worker_status(heartbeat, timeframe, now)`
+  becomes `derive_worker_status(heartbeat, worker_id, now)`. The lookup
+  simplifies from `workers.get(timeframe.lower()) or
+  next(iter(workers.values()), None)` (a same-timeframe-key guess the
+  function's own comment already flags as wrong once a second worker
+  exists) to a direct `workers.get(worker_id)` — worker IDs are now
+  unambiguous, so the arbitrary-fallback is removed entirely rather than
+  extended.
+- **`routes/signals.py` `/v1/signals/service/status`** and
+  **`routes/settings.py` `/v1/settings/service/status`**: both currently
+  derive a bare `timeframe` and pass it to `derive_worker_status`. Both
+  become explicitly gold-scoped: `worker_id = f"XAUUSD:{timeframe}"` (a
+  `GOLD_SYMBOL = "XAUUSD"` constant added near the existing
+  `LIVE_TIMEFRAME` constant in `routes/settings.py`). This keeps every
+  existing top-level response field (`status`, `symbol: "XAUUSD"`,
+  `candles_processed`, etc.) reporting gold specifically and unchanged in
+  meaning — no new top-level fields for GBPUSD/EURUSD status are added by
+  this design (out of scope; nothing user-visible depends on them while
+  both ship disabled).
+- **`routes/settings.py` `/v1/settings/strategies`**: `STRATEGY_DISPLAY_NAMES`
+  (a flat `{rule_key: display_name}` dict) becomes a small per-symbol
+  registry:
+  ```python
+  STRATEGY_REGISTRY = {
+      'XAUUSD': {'order_block_retest': 'Order Block Retest'},
+      'GBPUSD': {'asian_range_london_breakout': 'Asian Range London Breakout'},
+      'EURUSD': {'asian_range_london_breakout': 'Asian Range London Breakout'},
+  }
+  ```
+  The endpoint iterates every `(symbol, rules)` pair, adds a `"symbol"`
+  field to each returned entry, and computes `"enabled"` from the correct
+  source per symbol — `enabled_strategies` (unchanged) for `XAUUSD`,
+  `enabled_forex_symbols` membership for `GBPUSD`/`EURUSD`. Validation
+  stats are read from each symbol's own tuned config
+  (`tuned_configs/1h.json`'s `final_shared_config_validation` for XAUUSD,
+  unchanged; `tuned_configs/gbpusd_1h.json`/`eurusd_1h.json`'s `test` block
+  for the forex pairs — a different shape, confirmed by inspection, so
+  this needs its own read path rather than reusing gold's
+  `final_shared_config_validation` lookup). This is what lets an admin see
+  GBPUSD/EURUSD's rule state and validated performance before deciding to
+  flip `enabled_forex_symbols` — directly relevant to the go-live decision
+  in Rollout step 4.
+- **`/v1/signals/stats/performance`**: gains an optional `symbol` query
+  parameter, filtering `SignalRepository.get_performance_stats` by
+  `Signal.symbol` when provided; omitted defaults to today's all-symbols
+  behavior (unchanged). Low urgency while GBPUSD/EURUSD produce zero
+  signals, but cheap to add now rather than leave a landmine for the day
+  results would otherwise silently blend gold and forex performance.
 
 ### Error handling
 
@@ -221,8 +280,9 @@ no window where a worker observes the old shape:
   worker's thread by the existing per-worker exception boundary — a second
   timeframe already relies on this same isolation today, so gold cannot be
   taken down by a GBPUSD/EURUSD failure.
-- **Missing `enabled_strategies[symbol]` key**: treated as `[]`
-  (disabled), never as "everything enabled" — fail closed.
+- **`enabled_forex_symbols` missing or absent a symbol**: treated as `[]`
+  / not-enabled for that symbol, never as "everything enabled" — fail
+  closed.
 
 ## Testing
 
@@ -242,13 +302,17 @@ watch it fail, then implement:
    `save_last_processed_candle`/`get_last_processed_candle`; assert
    neither clobbers the other. This is the test that would fail before
    the fix.
-4. `enabled_strategies` migration: seed the old flat-list shape, run
-   `initialize_defaults()`, assert the new dict shape; a second test
-   asserts idempotency (no-op, no reset of user edits) when already
-   dict-shaped.
-5. `refresh_settings()` per-symbol scoping: GBPUSD's rule state responds
-   only to `enabled_strategies["GBPUSD"]`, unaffected by XAUUSD's entry.
-6. Missing-key fail-closed: no `"EURUSD"` key → EURUSD's rule(s) disabled.
+4. `last_processed_candle_by_worker` seed migration: seed the old
+   `last_processed_candle_by_timeframe["1h"]` value, run
+   `initialize_defaults()`, assert `last_processed_candle_by_worker["XAUUSD:1h"]`
+   is seeded from it; a second test asserts idempotency (no reset) once
+   the new key already holds real data.
+5. `refresh_settings()` scoping: gold's worker reads `enabled_strategies`
+   exactly as before (regression — must stay byte-identical); a GBPUSD
+   worker's rule state responds only to `enabled_forex_symbols` containing
+   `"GBPUSD"`, unaffected by EURUSD's presence/absence in that same list.
+6. Missing-symbol fail-closed: `enabled_forex_symbols` without
+   `"EURUSD"` → EURUSD's rule stays disabled.
 7. `ticker_map`: GBPUSD/EURUSD map correctly; an unmapped symbol raises.
 8. Tuned config loading: a config without `enabled_rules`/`expiry_hours`
    (GBPUSD/EURUSD's actual shape) loads without a `KeyError`, falls back
@@ -283,6 +347,6 @@ not a unit-test concern.
    appear in `worker_heartbeat`, all `is_running`, GBPUSD/EURUSD producing
    zero signals (rule disabled), gold's signal cadence and last-processed
    candle unaffected by the deploy.
-4. Report back to the user with what's now live-but-disabled. **Do not
-   flip `enabled_strategies["GBPUSD"]`/`["EURUSD"]` on without the user's
+4. Report back to the user with what's now live-but-disabled. **Do not add
+   `"GBPUSD"`/`"EURUSD"` to `enabled_forex_symbols` without the user's
    explicit go-ahead** — a separate decision from building the capability.
