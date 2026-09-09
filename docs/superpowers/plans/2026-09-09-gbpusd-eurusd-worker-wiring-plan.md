@@ -1808,7 +1808,7 @@ def expected_uptime_hours(now, start_time):
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `cd packages/api && ./venv/bin/python3 -m pytest tests/test_worker_status.py -v` (if no local `venv` exists in `packages/api`, use the engine's: `../engine/venv/bin/python3 -m pytest tests/test_worker_status.py -v` — check which interpreter has `worker_status`'s dependencies importable; it has none beyond stdlib, so the system `python3`/either venv works)
+Run: `cd packages/api && ../engine/venv/bin/python3 -m pytest tests/test_worker_status.py -v` (`packages/api` has no venv of its own — confirmed by inspection — it always runs against the engine's venv at `packages/engine/venv`, which has `fastapi`/`pytest`/etc. installed; the system `python3` does not have `pytest` installed at all)
 Expected: FAIL — `TypeError: derive_worker_status() got an unexpected keyword argument 'worker_id'`.
 
 - [ ] **Step 3: Implement**
@@ -1887,7 +1887,7 @@ def derive_worker_status(
 
 - [ ] **Step 4: Run tests to verify they pass**
 
-Run: `cd packages/api && python3 -m pytest tests/test_worker_status.py -v`
+Run: `cd packages/api && ../engine/venv/bin/python3 -m pytest tests/test_worker_status.py -v`
 Expected: PASS (all).
 
 - [ ] **Step 5: Commit**
@@ -1983,7 +1983,7 @@ with:
 
 There is no route-level test file for these two endpoints today (confirmed: `packages/api/tests/` only contains `test_worker_status.py`), so this task has no new/existing route test to run. Verify by import:
 
-Run: `cd packages/api && python3 -c "import sys; sys.path.insert(0, 'src'); from routes import signals, settings"`
+Run: `cd packages/api && ../engine/venv/bin/python3 -c "import sys; sys.path.insert(0, 'src'); from routes import signals, settings"`
 Expected: no `ImportError`/`NameError` (confirms `GOLD_SYMBOL` is defined before use in both files).
 
 - [ ] **Step 4: Commit**
@@ -2093,7 +2093,7 @@ class TestBuildStrategiesList:
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `cd packages/api && python3 -m pytest tests/test_strategies_registry.py -v`
+Run: `cd packages/api && ../engine/venv/bin/python3 -m pytest tests/test_strategies_registry.py -v`
 Expected: FAIL — `ModuleNotFoundError: No module named 'strategies_registry'`.
 
 - [ ] **Step 3: Implement**
@@ -2282,11 +2282,11 @@ async def get_strategies(db: Session = Depends(get_db)):
 
 - [ ] **Step 4: Run tests to verify they pass**
 
-Run: `cd packages/api && python3 -m pytest tests/test_strategies_registry.py -v`
+Run: `cd packages/api && ../engine/venv/bin/python3 -m pytest tests/test_strategies_registry.py -v`
 Expected: PASS (all).
 
 Also verify the route still imports cleanly:
-Run: `cd packages/api && python3 -c "import sys; sys.path.insert(0, 'src'); from routes import settings"`
+Run: `cd packages/api && ../engine/venv/bin/python3 -c "import sys; sys.path.insert(0, 'src'); from routes import settings"`
 Expected: no error.
 
 - [ ] **Step 5: Commit**
@@ -2377,7 +2377,7 @@ async def get_performance_stats(
 
 - [ ] **Step 2: Verify by import**
 
-Run: `cd packages/api && python3 -c "import sys; sys.path.insert(0, 'src'); from routes import signals"`
+Run: `cd packages/api && ../engine/venv/bin/python3 -c "import sys; sys.path.insert(0, 'src'); from routes import signals"`
 Expected: no error.
 
 - [ ] **Step 3: Commit**
@@ -2399,11 +2399,21 @@ git commit -m "feat: optional symbol filter on /v1/signals/stats/performance"
 - [ ] **Step 1: Run the full engine test suite**
 
 Run: `cd packages/engine && ./venv/bin/python3 -m pytest tests/ -v`
-Expected: PASS — every test in the directory, including all files touched across Tasks 1–6 and every pre-existing file not touched by this plan (e.g. `test_realtime_feed_timezone.py`, `test_realtime_feed_end_date.py`, `test_weekly_report.py`, `test_worker_heartbeat.py`). Any failure here means a gold-regression was introduced — stop and fix before proceeding.
+Expected: PASS except one known, pre-existing, unrelated baseline failure —
+confirmed present before this plan's implementation began (git commit
+`f580006`, the last commit before Task 1): `tests/test_api.py` fails with
+`ModuleNotFoundError: No module named 'main'` (1 failed, 6 errors) — a stale
+test file referencing a module path from before the API moved to
+`packages/api`. This is not something this plan touches or is responsible
+for fixing. Every other test must PASS, including all files touched across
+Tasks 1–6 and every pre-existing file not touched by this plan (e.g.
+`test_realtime_feed_timezone.py`, `test_realtime_feed_end_date.py`,
+`test_weekly_report.py`, `test_worker_heartbeat.py`). Any *other* failure
+means a gold-regression was introduced — stop and fix before proceeding.
 
 - [ ] **Step 2: Run the full API test suite**
 
-Run: `cd packages/api && python3 -m pytest tests/ -v`
+Run: `cd packages/api && ../engine/venv/bin/python3 -m pytest tests/ -v`
 Expected: PASS — `test_worker_status.py` and `test_strategies_registry.py`.
 
 - [ ] **Step 3: Update the strategy ledger**
