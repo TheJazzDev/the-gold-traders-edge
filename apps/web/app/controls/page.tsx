@@ -17,7 +17,7 @@ import { Switch } from "@/components/ui/switch";
 import { Slider } from "@/components/ui/slider";
 import { Label } from "@/components/ui/label";
 import { formatProfitFactor } from "@/lib/utils";
-import { Server, Zap, Shield, CheckCircle2, XCircle, Play, Square } from "lucide-react";
+import { Server, Zap, Shield, CheckCircle2, XCircle, Play, Square, Lock } from "lucide-react";
 import type { Setting, StrategyPerformance } from "@/lib/types";
 
 function findSetting(settings: Setting[] | undefined, key: string) {
@@ -254,10 +254,25 @@ export default function ControlsPage() {
                       checked={strategy.enabled}
                       disabled={strategy.symbol !== "XAUUSD"}
                       onCheckedChange={() => toggleStrategy(strategy)}
+                      className={strategy.symbol !== "XAUUSD" ? "disabled:opacity-100" : ""}
                     />
                     <div className="min-w-0">
-                      <p className="text-sm sm:text-base font-medium text-white mb-0.5 sm:mb-1 truncate">
+                      <p className="text-sm sm:text-base font-medium text-white mb-0.5 sm:mb-1 truncate flex items-center gap-1.5 flex-wrap">
                         {strategy.name} <span className="text-gray-500 font-normal">· {strategy.symbol}</span>
+                        {strategy.symbol !== "XAUUSD" && (
+                          <span
+                            className={
+                              "inline-flex items-center gap-1 text-[10px] font-medium px-1.5 py-0.5 rounded-full border " +
+                              (strategy.enabled
+                                ? "text-green-400 border-green-500/40 bg-green-500/10"
+                                : "text-gray-400 border-white/10 bg-white/5")
+                            }
+                            title="Managed via enabled_forex_symbols, not this switch"
+                          >
+                            <Lock className="w-2.5 h-2.5" />
+                            {strategy.enabled ? "Live" : "Off"}
+                          </span>
+                        )}
                       </p>
                       {strategy.validated ? (
                         <div className="flex items-center gap-2 sm:gap-3 text-xs text-gray-400 flex-wrap">
