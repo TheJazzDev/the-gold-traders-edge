@@ -43,9 +43,14 @@ elsewhere, work moved to hypotheses native to other instruments — see
   module), with full test coverage. Formal validation via
   `tune_forex_session_strategy.py` confirms: GBPUSD ENABLED, EURUSD
   ENABLED (`tuned_configs/gbpusd_1h.json`, `tuned_configs/eurusd_1h.json`).
-- **Verdict:** ✅ Validated on both pairs. **Not wired into the live
-  multi-timeframe service** — going live is a separate, later decision,
-  same convention as every GoldStrategy rule.
+- **Verdict:** ✅ Validated on both pairs. **Wired into the live
+  multi-timeframe service as of 2026-09-09** (see
+  docs/superpowers/specs/2026-09-09-gbpusd-eurusd-worker-wiring-design.md)
+  — both workers run live in production (real data feed, heartbeat,
+  restart-protection) with their rule disabled (`enabled_forex_symbols`
+  empty by default). **Actually enabling either symbol's signals is a
+  separate, later decision** requiring the user's explicit go-ahead, same
+  convention as every GoldStrategy rule.
 
 ---
 
