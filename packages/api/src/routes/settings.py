@@ -36,8 +36,9 @@ STRATEGY_DISPLAY_NAMES = {
 }
 
 # Only 1h is currently tuned/validated and actually running live — see
-# TIMEFRAMES in run_multi_timeframe_service.py.
+# WORKER_SPECS in run_multi_timeframe_service.py.
 LIVE_TIMEFRAME = '1h'
+GOLD_SYMBOL = 'XAUUSD'
 
 
 # ==================== PYDANTIC MODELS ====================
@@ -443,7 +444,7 @@ async def get_service_status(db: Session = Depends(get_db)):
     repo = SettingsRepository(db)
 
     heartbeat = repo.get("worker_heartbeat", default={}) or {}
-    worker_status = derive_worker_status(heartbeat, timeframe=LIVE_TIMEFRAME, now=datetime.now())
+    worker_status = derive_worker_status(heartbeat, worker_id=f"{GOLD_SYMBOL}:{LIVE_TIMEFRAME}", now=datetime.now())
     status = "running" if worker_status.is_running else "stopped"
 
     return {

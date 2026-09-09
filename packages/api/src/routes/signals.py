@@ -31,6 +31,13 @@ from src.worker_status import derive_worker_status
 
 router = APIRouter(prefix="/v1/signals", tags=["signals"])
 
+# This endpoint's status fields have always reported gold specifically
+# (symbol="XAUUSD" is hardcoded in the ServiceStatus response below); now
+# that the heartbeat can contain more than one worker, worker_id must be
+# constructed explicitly rather than picked arbitrarily. See
+# docs/superpowers/specs/2026-09-09-gbpusd-eurusd-worker-wiring-design.md.
+GOLD_SYMBOL = "XAUUSD"
+
 
 def _parse_timeframe_hours(timeframe: str) -> float:
     """Parse a timeframe string like '1h', '4H', '15m' into hours. Falls back to 1h."""
@@ -379,7 +386,7 @@ async def get_service_status(db: Session = Depends(get_db)):
 
     settings_repo = SettingsRepository(db)
     heartbeat = settings_repo.get('worker_heartbeat', default={}) or {}
-    worker_status = derive_worker_status(heartbeat, timeframe=timeframe, now=datetime.now())
+    worker_status = derive_worker_status(heartbeat, worker_id=f"{GOLD_SYMBOL}:{timeframe}", now=datetime.now())
 
     is_running = worker_status.is_running
     last_candle_time = latest_signal.created_at if latest_signal else None
