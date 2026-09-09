@@ -1,0 +1,36 @@
+{
+  "generated_at": "2026-09-09T06:02:20.014711+00:00",
+  "symbol": "EURUSD",
+  "timeframe": "1h",
+  "strategy_class": "ForexSessionStrategy",
+  "data_range": {
+    "start": "2023-11-23 00:00:00+00:00",
+    "end": "2026-09-08 21:00:00+00:00",
+    "train_end": "2025-11-05 21:00:00+00:00"
+  },
+  "config": {
+    "asian_hours_start": 0,
+    "asian_hours_end": 7,
+    "entry_hour": 7,
+    "lookback_candles": 12,
+    "min_asian_candles": 5,
+    "atr_period": 14,
+    "breakout_buffer_atr": 0.1,
+    "sl_buffer_atr": 0.3,
+    "default_rr_ratio": 2.0
+  },
+  "enabled": true,
+  "train": {
+    "profit_factor": 1.2932748399574634,
+    "total_trades": 121,
+    "win_rate": 40.49586776859504,
+    "net_profit_pct": 59.55524144929731
+  },
+  "test": {
+    "profit_factor": 1.1798182670622284,
+    "total_trades": 50,
+    "win_rate": 38.0,
+    "net_profit_pct": 12.626812503218984
+  },
+  "note": "Default (untuned) parameters, deliberately not swept \u2014 see docs/superpowers/specs/2026-09-09-gbpusd-asian-range-breakout-design.md and strategy-ledger.md's methodology note on why a sweep was skipped."
+}
