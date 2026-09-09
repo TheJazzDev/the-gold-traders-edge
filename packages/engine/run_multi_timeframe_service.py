@@ -250,12 +250,22 @@ class TimeframeWorker:
                     repo = SettingsRepository(session)
                     repo.initialize_defaults()
                     enabled_list = repo.get('enabled_strategies', default=None)
+                    enabled_forex_symbols = repo.get('enabled_forex_symbols', default=[]) or []
                     min_confidence = repo.get('min_confidence', default=None)
                     min_rr_ratio = repo.get('min_rr_ratio', default=None)
 
-                if enabled_list is not None:
+                if self.spec.strategy_class is GoldStrategy:
+                    if enabled_list is not None:
+                        for name in strategy.rules_enabled:
+                            strategy.set_rule_enabled(name, name in enabled_list)
+                else:
+                    # A forex worker's single rule is gated by symbol
+                    # membership in enabled_forex_symbols, not by rule name
+                    # — GBPUSD and EURUSD both use the same rule name
+                    # (asian_range_london_breakout), which enabled_strategies
+                    # can't disambiguate between symbols.
                     for name in strategy.rules_enabled:
-                        strategy.set_rule_enabled(name, name in enabled_list)
+                        strategy.set_rule_enabled(name, self.spec.symbol in enabled_forex_symbols)
                 if min_confidence is not None:
                     validator.min_confidence = min_confidence
                 if min_rr_ratio is not None:
@@ -263,7 +273,7 @@ class TimeframeWorker:
 
                 effective = [name for name, on in strategy.rules_enabled.items() if on]
                 logger.info(
-                    f"   [{self.timeframe}] Settings refreshed — enabled rules: {effective}, "
+                    f"   [{self.worker_id}] Settings refreshed — enabled rules: {effective}, "
                     f"min_confidence={validator.min_confidence}, min_rr_ratio={validator.min_rr_ratio}"
                 )
 

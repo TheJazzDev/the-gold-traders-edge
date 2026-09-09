@@ -213,6 +213,25 @@ DEFAULT_SETTINGS = [
         'requires_restart': False,
     },
     {
+        'key': 'enabled_forex_symbols',
+        'category': SettingCategory.STRATEGIES,
+        # GBPUSD/EURUSD's ForexSessionStrategy worker runs live (real data
+        # feed, heartbeat, restart-protection) from the moment it's
+        # deployed, but its single rule (asian_range_london_breakout) only
+        # fires for a symbol listed here. Empty by default — both symbols
+        # ship disabled until explicitly approved to go live. See
+        # docs/superpowers/specs/2026-09-09-gbpusd-eurusd-worker-wiring-design.md.
+        # Deliberately a separate setting from enabled_strategies, which
+        # keeps its exact current shape/meaning (a flat list of gold rule
+        # names) since apps/web's live admin toggle depends on that shape.
+        'value': '[]',
+        'value_type': 'json',
+        'default_value': '[]',
+        'description': 'Forex symbols (GBPUSD/EURUSD) whose ForexSessionStrategy rule is live (applied on the next candle close — no restart needed)',
+        'editable': True,
+        'requires_restart': False,
+    },
+    {
         'key': 'min_rr_ratio',
         'category': SettingCategory.STRATEGIES,
         'value': '1.5',

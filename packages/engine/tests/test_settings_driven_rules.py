@@ -179,3 +179,78 @@ class TestLastProcessedCandlePersistence:
 
         # A different timeframe's worker must not see 1h's recorded candle.
         assert kwargs_15m["last_processed_candle_getter"]() is None
+
+
+class TestForexSymbolEnabling:
+    """Coverage for enabled_forex_symbols — a separate setting from
+    enabled_strategies (which must keep its exact current shape/meaning,
+    since apps/web's live admin toggle depends on it — see
+    docs/superpowers/specs/2026-09-09-gbpusd-eurusd-worker-wiring-design.md)."""
+
+    def _forex_worker(self, tmp_path, spec):
+        worker = svc_module.TimeframeWorker.__new__(svc_module.TimeframeWorker)
+        worker.spec = spec
+        worker.database_url = f"sqlite:///{tmp_path / 'settings.db'}"
+        worker.shared_dedup_subscriber = MagicMock()
+        worker.telegram_subscriber = MagicMock()
+        worker.enable_trading = False
+        worker.mt5_config = None
+        return worker
+
+    def _run_and_capture_hook(self, worker, tmp_path):
+        from signals.forex_session_strategy import ForexSessionStrategy
+        tuned_dir = tmp_path / "tuned_configs"
+        tuned_dir.mkdir(exist_ok=True)
+        (tuned_dir / worker.spec.tuned_config_filename).write_text(
+            json.dumps({"config": ForexSessionStrategy.DEFAULT_CONFIG})
+        )
+        with patch.object(svc_module, "__file__", str(tmp_path / "run_multi_timeframe_service.py")), \
+             patch.object(svc_module, "create_datafeed"), \
+             patch.object(svc_module, "RealtimeSignalGenerator") as mock_generator_cls, \
+             patch.object(svc_module, "SignalOutcomeTracker"):
+            worker._run()
+        kwargs = mock_generator_cls.call_args.kwargs
+        return kwargs["strategy"], kwargs["pre_run_hook"]
+
+    def test_gbpusd_worker_disabled_by_default(self, tmp_path):
+        worker = self._forex_worker(tmp_path, svc_module.GBPUSD_1H_SPEC)
+        seed_settings(worker.database_url)  # defaults only — enabled_forex_symbols == []
+
+        strategy, refresh = self._run_and_capture_hook(worker, tmp_path)
+        refresh()
+
+        assert strategy.rules_enabled["asian_range_london_breakout"] is False
+
+    def test_gbpusd_worker_enabled_when_listed(self, tmp_path):
+        worker = self._forex_worker(tmp_path, svc_module.GBPUSD_1H_SPEC)
+        seed_settings(worker.database_url, enabled_forex_symbols=["GBPUSD"])
+
+        strategy, refresh = self._run_and_capture_hook(worker, tmp_path)
+        refresh()
+
+        assert strategy.rules_enabled["asian_range_london_breakout"] is True
+
+    def test_eurusd_unaffected_by_gbpusd_being_enabled(self, tmp_path):
+        worker = self._forex_worker(tmp_path, svc_module.EURUSD_1H_SPEC)
+        seed_settings(worker.database_url, enabled_forex_symbols=["GBPUSD"])
+
+        strategy, refresh = self._run_and_capture_hook(worker, tmp_path)
+        refresh()
+
+        assert strategy.rules_enabled["asian_range_london_breakout"] is False
+
+    def test_gold_worker_still_reads_enabled_strategies_unchanged(self, tmp_path):
+        """Regression: gold's own settings-driven behavior (already covered
+        above in TestSettingsDrivenRuleEnabling) must be completely
+        unaffected by enabled_forex_symbols existing."""
+        worker = make_worker(tmp_path)
+        seed_settings(
+            worker.database_url,
+            enabled_strategies=["order_block_retest"],
+            enabled_forex_symbols=["GBPUSD", "EURUSD"],
+        )
+
+        strategy, _validator, refresh = run_worker_and_capture_hook(worker, tmp_path)
+        refresh()
+
+        assert strategy.rules_enabled == {"order_block_retest": True}
