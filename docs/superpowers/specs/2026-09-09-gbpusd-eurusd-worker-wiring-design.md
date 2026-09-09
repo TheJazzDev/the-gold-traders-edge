@@ -131,6 +131,22 @@ on iteration 1. Similarly, fall back to `expiry_hours = 48.0` (the same
 constant already used today when no tuned config exists at all) when the
 tuned config doesn't specify one.
 
+**`lookback_periods` sizing must also branch on config shape** — confirmed
+by reading both strategies' `evaluate()` methods: `TimeframeWorker._run()`'s
+existing `lookback_periods = max(200, strategy.config['trend_lookback'] +
+50)` hardcodes a key (`trend_lookback`) that only exists in
+`GoldStrategy`'s config — `ForexSessionStrategy.config` has no such key at
+all, so this line would `KeyError` immediately for GBPUSD/EURUSD,
+independent of whether a tuned config file exists. `ForexSessionStrategy`'s
+own internal gate (`evaluate()`'s `if current_idx < config['lookback_candles']
++ config['atr_period']: return None`) is structurally different — a much
+smaller window (12+14=26 by default) than gold's trend-lookback concept.
+Fix: read `trend_lookback` when present (gold, unchanged), else compute
+`lookback_candles + atr_period` (forex) — in practice this still resolves
+to the existing `max(200, ...)` floor either way, so forex workers end up
+with the same `lookback_periods=200` as gold, comfortably above their
+actual 26-candle gate.
+
 **`MultiTimeframeService`** iterates `WORKER_SPECS`, starts **all** of
 them as live threads (per the "run live, rule disabled" decision — there
 is no spec-level `enabled` flag gating thread creation). All workers
@@ -318,7 +334,9 @@ watch it fail, then implement:
    (GBPUSD/EURUSD's actual shape) loads without a `KeyError`, falls back
    to `expiry_hours=48.0`, and leaves `rules_enabled` at the strategy's
    constructor default (which `refresh_settings()` then immediately
-   overrides from the DB setting, per the Design section above).
+   overrides from the DB setting, per the Design section above). A
+   `ForexSessionStrategy` worker's `lookback_periods` sizing doesn't
+   `KeyError` on a missing `trend_lookback` key either.
 9. `worker_status.derive_worker_status` accepts `worker_id` and correctly
    distinguishes `XAUUSD:1h` vs `GBPUSD:1h` entries in one heartbeat
    payload.
