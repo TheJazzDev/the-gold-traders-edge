@@ -19,21 +19,13 @@ from signals.gold_strategy import GoldStrategy
 
 
 def make_worker(timeframe="1h"):
-    # Create a spec for testing with the given timeframe
-    spec = svc_module.WorkerSpec(
-        symbol="XAUUSD",
-        strategy_class=GoldStrategy,
-        timeframe=timeframe,
-        tuned_config_filename=f"{timeframe}.json"
-    )
-    worker = svc_module.TimeframeWorker(
-        spec=spec,
-        database_url="sqlite:///:memory:",
-        shared_dedup_subscriber=MagicMock(),
-        telegram_subscriber=MagicMock(),
-        enable_trading=False,
-        mt5_config=None
-    )
+    worker = svc_module.TimeframeWorker.__new__(svc_module.TimeframeWorker)
+    worker.timeframe = timeframe
+    worker.database_url = "sqlite:///:memory:"
+    worker.shared_dedup_subscriber = MagicMock()
+    worker.telegram_subscriber = MagicMock()
+    worker.enable_trading = False
+    worker.mt5_config = None
     return worker
 
 
