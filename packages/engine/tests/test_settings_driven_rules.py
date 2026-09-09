@@ -26,9 +26,10 @@ from database.models import Base
 from database.settings_repository import SettingsRepository
 
 
-def make_worker(tmp_path, timeframe="1h"):
+def make_worker(tmp_path, spec=None):
+    spec = spec or svc_module.XAUUSD_1H_SPEC
     worker = svc_module.TimeframeWorker.__new__(svc_module.TimeframeWorker)
-    worker.timeframe = timeframe
+    worker.spec = spec
     worker.database_url = f"sqlite:///{tmp_path / 'settings.db'}"
     worker.shared_dedup_subscriber = MagicMock()
     worker.telegram_subscriber = MagicMock()
@@ -166,12 +167,14 @@ class TestLastProcessedCandlePersistence:
 
         assert kwargs_b["last_processed_candle_getter"]() == when
 
-    def test_keyed_by_timeframe_independently(self, tmp_path):
-        worker_1h = make_worker(tmp_path, timeframe="1h")
+    def test_keyed_by_worker_id_independently(self, tmp_path):
+        worker_1h = make_worker(tmp_path, svc_module.WorkerSpec(
+            symbol='XAUUSD', strategy_class=GoldStrategy, timeframe='1h', tuned_config_filename='1h.json'))
         kwargs_1h = run_worker_and_capture_all_kwargs(worker_1h, tmp_path)
         kwargs_1h["last_processed_candle_setter"](datetime(2026, 9, 8, 18, 0, 0))
 
-        worker_15m = make_worker(tmp_path, timeframe="15m")
+        worker_15m = make_worker(tmp_path, svc_module.WorkerSpec(
+            symbol='XAUUSD', strategy_class=GoldStrategy, timeframe='15m', tuned_config_filename='15m.json'))
         kwargs_15m = run_worker_and_capture_all_kwargs(worker_15m, tmp_path)
 
         # A different timeframe's worker must not see 1h's recorded candle.

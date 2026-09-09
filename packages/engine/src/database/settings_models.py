@@ -371,12 +371,31 @@ DEFAULT_SETTINGS = [
         'value_type': 'json',
         'default_value': '{}',
         'description': (
-            "Internal: JSON map of timeframe -> ISO timestamp of the last "
-            "candle actually evaluated for signals. Persisted so a worker "
-            "restarted mid-candle (e.g. by a deploy) never re-evaluates and "
-            "re-signals on a candle it already processed — see the "
-            "2026-09-08 duplicate-signal incident in "
-            "docs/superpowers/specs/strategy-ledger.md."
+            "Deprecated: superseded by last_processed_candle_by_worker "
+            "(keyed by \"SYMBOL:timeframe\" instead of bare timeframe, "
+            "since two workers can share a timeframe string once more than "
+            "one symbol runs live). Left in place, unread by any worker, "
+            "only as the source for a one-time seed migration — see "
+            "docs/superpowers/specs/2026-09-09-gbpusd-eurusd-worker-wiring-design.md."
+        ),
+        'editable': False,
+        'requires_restart': False,
+    },
+    {
+        'key': 'last_processed_candle_by_worker',
+        'category': SettingCategory.SYSTEM,
+        'value': '{}',
+        'value_type': 'json',
+        'default_value': '{}',
+        'description': (
+            "Internal: JSON map of \"SYMBOL:timeframe\" -> ISO timestamp of "
+            "the last candle actually evaluated for signals. Persisted so a "
+            "worker restarted mid-candle (e.g. by a deploy) never "
+            "re-evaluates and re-signals on a candle it already processed "
+            "— see the 2026-09-08 duplicate-signal incident in "
+            "docs/superpowers/specs/strategy-ledger.md. Keyed by worker_id "
+            "rather than bare timeframe so two workers on the same "
+            "timeframe (e.g. XAUUSD:1h and GBPUSD:1h) don't collide."
         ),
         'editable': False,
         'requires_restart': False,

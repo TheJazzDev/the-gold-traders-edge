@@ -271,16 +271,17 @@ class TimeframeWorker:
             # restarted mid-candle (e.g. by a deploy) never re-evaluates and
             # re-signals on a candle it already processed — see the
             # 2026-09-08 duplicate-signal incident in
-            # docs/superpowers/specs/strategy-ledger.md. Keyed by timeframe
-            # in one JSON setting rather than a setting per timeframe.
+            # docs/superpowers/specs/strategy-ledger.md. Keyed by worker_id
+            # (not bare timeframe) so two workers on the same timeframe
+            # (e.g. XAUUSD:1h and GBPUSD:1h) don't collide.
             def get_last_processed_candle():
                 db_manager = DatabaseManager(self.database_url)
                 with db_manager.session_scope() as session:
                     Base.metadata.create_all(bind=session.get_bind())
                     repo = SettingsRepository(session)
                     repo.initialize_defaults()
-                    by_timeframe = repo.get('last_processed_candle_by_timeframe', default={}) or {}
-                raw = by_timeframe.get(self.timeframe)
+                    by_worker = repo.get('last_processed_candle_by_worker', default={}) or {}
+                raw = by_worker.get(self.worker_id)
                 return datetime.fromisoformat(raw) if raw else None
 
             def save_last_processed_candle(candle_time: datetime):
@@ -289,11 +290,11 @@ class TimeframeWorker:
                     Base.metadata.create_all(bind=session.get_bind())
                     repo = SettingsRepository(session)
                     repo.initialize_defaults()
-                    setting = repo.get_setting('last_processed_candle_by_timeframe')
+                    setting = repo.get_setting('last_processed_candle_by_worker')
                     if setting:
-                        by_timeframe = setting.get_typed_value() or {}
-                        by_timeframe[self.timeframe] = candle_time.isoformat()
-                        setting.set_typed_value(by_timeframe)
+                        by_worker = setting.get_typed_value() or {}
+                        by_worker[self.worker_id] = candle_time.isoformat()
+                        setting.set_typed_value(by_worker)
 
             # GoldStrategy.evaluate() refuses to evaluate any rule until
             # current_idx >= max(config['trend_lookback'], 60) (silently

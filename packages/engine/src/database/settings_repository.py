@@ -56,8 +56,34 @@ class SettingsRepository:
             if changed:
                 logger.info(f"Synced metadata for setting '{setting_data['key']}': {changed}")
 
+        self._migrate_last_processed_candle_by_worker()
+
         self.session.commit()
         logger.info(f"✅ Settings initialized ({len(DEFAULT_SETTINGS)} total)")
+
+    def _migrate_last_processed_candle_by_worker(self):
+        """
+        One-time seed: if last_processed_candle_by_worker has never been
+        written to (still its default {}) and the deprecated
+        last_processed_candle_by_timeframe has a '1h' entry (gold's
+        pre-migration data), seed XAUUSD:1h from it — preserves gold's
+        restart-duplicate-signal protection across this deploy. A no-op
+        forever after, once real per-worker data exists. See
+        docs/superpowers/specs/2026-09-09-gbpusd-eurusd-worker-wiring-design.md.
+        """
+        by_worker_setting = self.session.query(Setting).filter_by(key='last_processed_candle_by_worker').first()
+        old_setting = self.session.query(Setting).filter_by(key='last_processed_candle_by_timeframe').first()
+        if not by_worker_setting or not old_setting:
+            return
+
+        by_worker = by_worker_setting.get_typed_value() or {}
+        if by_worker:
+            return  # already has real data — never overwrite
+
+        old_value = old_setting.get_typed_value() or {}
+        old_1h = old_value.get('1h')
+        if old_1h:
+            by_worker_setting.set_typed_value({'XAUUSD:1h': old_1h})
 
     def get(self, key: str, default: Any = None) -> Any:
         """
