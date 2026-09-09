@@ -289,6 +289,7 @@ async def delete_signal(signal_id: int, db: Session = Depends(get_db)):
 @router.get("/stats/performance", response_model=PerformanceStats)
 async def get_performance_stats(
     days: Optional[int] = None,
+    symbol: Optional[str] = None,
     db: Session = Depends(get_db)
 ):
     """
@@ -304,13 +305,17 @@ async def get_performance_stats(
     Args:
         days: Calculate stats for last N days (default: all time, via a
             30-year lookback since the repository method requires a value)
+        symbol: If given, only signals for this symbol (default: all
+            symbols, today's behavior — added so GBPUSD/EURUSD performance
+            doesn't silently blend into gold's once either goes live; see
+            docs/superpowers/specs/2026-09-09-gbpusd-eurusd-worker-wiring-design.md)
         db: Database session
 
     Returns:
         Performance statistics
     """
     repo = SignalRepository(db)
-    stats = repo.get_performance_stats(days=days or 365 * 30)
+    stats = repo.get_performance_stats(days=days or 365 * 30, symbol=symbol)
 
     return PerformanceStats(
         total_signals=stats['total_signals'],
