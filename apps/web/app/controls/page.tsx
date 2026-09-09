@@ -18,7 +18,7 @@ import { Slider } from "@/components/ui/slider";
 import { Label } from "@/components/ui/label";
 import { formatProfitFactor } from "@/lib/utils";
 import { Server, Zap, Shield, CheckCircle2, XCircle, Play, Square } from "lucide-react";
-import type { Setting } from "@/lib/types";
+import type { Setting, StrategyPerformance } from "@/lib/types";
 
 function findSetting(settings: Setting[] | undefined, key: string) {
   return settings?.find((s) => s.key === key);
@@ -64,7 +64,14 @@ export default function ControlsPage() {
   // their toggle is gated off below instead (see the Switch's `disabled`
   // prop). Enabling either forex symbol live is a separate, deliberate
   // decision (enabled_forex_symbols), not made from this page yet.
-  const toggleStrategy = (key: string) => {
+  const toggleStrategy = (strategy: StrategyPerformance) => {
+    // Belt-and-braces: the real corruption paths are already closed above
+    // (the Switch is `disabled` for non-XAUUSD rows, and enabledStrategies
+    // is scoped to XAUUSD-only), but guarding here too means this function
+    // itself can never write a forex rule name into enabled_strategies,
+    // even if a future edit removed one of those guards.
+    if (strategy.symbol !== "XAUUSD") return;
+    const key = strategy.key;
     const next = enabledStrategies.includes(key)
       ? enabledStrategies.filter((k) => k !== key)
       : [...enabledStrategies, key];
@@ -246,7 +253,7 @@ export default function ControlsPage() {
                     <Switch
                       checked={strategy.enabled}
                       disabled={strategy.symbol !== "XAUUSD"}
-                      onCheckedChange={() => toggleStrategy(strategy.key)}
+                      onCheckedChange={() => toggleStrategy(strategy)}
                     />
                     <div className="min-w-0">
                       <p className="text-sm sm:text-base font-medium text-white mb-0.5 sm:mb-1 truncate">

@@ -17,6 +17,7 @@ from signals.gold_strategy import GoldStrategy
 from signals.forex_session_strategy import ForexSessionStrategy
 from database.connection import DatabaseManager
 from database.models import Base
+from database.settings_models import Setting, SettingCategory
 from database.settings_repository import SettingsRepository
 
 
@@ -93,6 +94,56 @@ class TestLastProcessedCandleSeedMigration:
             # seed migration.
             repo = SettingsRepository(session)
             repo.initialize_defaults()
+            by_worker = repo.get('last_processed_candle_by_worker', default={})
+
+        assert by_worker == {'XAUUSD:1h': '2026-09-08T18:00:00'}
+
+    def test_seeds_correctly_on_the_very_first_initialize_defaults_call_ever(self, tmp_path):
+        """Finding 2 (2026-09-09 final whole-branch review): reproduces the
+        true production first-run shape — last_processed_candle_by_worker
+        does not exist as a row AT ALL yet (not even the default '{}' row),
+        because initialize_defaults() has never run before. The two other
+        tests in this class both call initialize_defaults() once in setup
+        (via _seed_old_setting -> repo.initialize_defaults()), which itself
+        creates the by_worker row on that call — so neither of them
+        exercises this scenario; this is the test that would have caught
+        the bug. Without SettingsRepository.initialize_defaults()'s
+        self.session.flush() (added before _migrate_last_processed_candle_by_worker()
+        runs), the same-call `session.add(Setting(key='last_processed_candle_by_worker', ...))`
+        is not yet queryable under DatabaseManager's autoflush=False
+        sessionmaker, so the migration's own query for that row returns
+        None, hits its `if not by_worker_setting: return` guard, and
+        silently skips the seed on this first run — verified empirically
+        against a reconstructed production-shaped DB."""
+        db_url = f"sqlite:///{tmp_path / 'migrate3.db'}"
+
+        # Seed ONLY the old setting, bypassing initialize_defaults() entirely
+        # (direct Setting row creation + commit), matching production: real
+        # last_processed_candle_by_timeframe data, but the new
+        # last_processed_candle_by_worker setting has never been created.
+        db_manager = DatabaseManager(db_url)
+        with db_manager.session_scope() as session:
+            Base.metadata.create_all(bind=session.get_bind())
+            old_setting = Setting(
+                key='last_processed_candle_by_timeframe',
+                category=SettingCategory.SYSTEM,
+                value='{}',
+                value_type='json',
+                default_value='{}',
+                editable=False,
+                requires_restart=False,
+            )
+            old_setting.set_typed_value({'1h': '2026-09-08T18:00:00'})
+            session.add(old_setting)
+            session.commit()
+
+        with db_manager.session_scope() as session:
+            # Confirm the precondition: last_processed_candle_by_worker
+            # truly does not exist as a row before this call.
+            assert session.query(Setting).filter_by(key='last_processed_candle_by_worker').first() is None
+
+            repo = SettingsRepository(session)
+            repo.initialize_defaults()  # THE call under test — the very first ever
             by_worker = repo.get('last_processed_candle_by_worker', default={})
 
         assert by_worker == {'XAUUSD:1h': '2026-09-08T18:00:00'}

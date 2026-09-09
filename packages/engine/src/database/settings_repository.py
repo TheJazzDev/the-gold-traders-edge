@@ -56,6 +56,15 @@ class SettingsRepository:
             if changed:
                 logger.info(f"Synced metadata for setting '{setting_data['key']}': {changed}")
 
+        # Flush before the migration reads back what was just added above:
+        # DatabaseManager's sessionmaker has autoflush=False, so a
+        # newly-added-but-not-yet-flushed Setting row (e.g.
+        # last_processed_candle_by_worker on its very first
+        # initialize_defaults() call ever) is not yet queryable —
+        # _migrate_last_processed_candle_by_worker()'s own query for it
+        # would return None and silently skip the one-time seed. See
+        # docs/superpowers/specs/2026-09-09-gbpusd-eurusd-worker-wiring-design.md.
+        self.session.flush()
         self._migrate_last_processed_candle_by_worker()
 
         self.session.commit()

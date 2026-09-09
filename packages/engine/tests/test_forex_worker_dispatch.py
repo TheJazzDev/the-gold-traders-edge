@@ -65,7 +65,24 @@ class TestForexWorkerDispatch:
         # also confirm the 48.0-hour fallback expiry was used.
         assert mock_tracker_cls.call_args.kwargs["expiry_hours"] == 48.0
 
-    def test_gbpusd_tuned_config_without_enabled_rules_leaves_rule_at_constructor_default(self, tmp_path, monkeypatch):
+    def test_gbpusd_tuned_config_without_enabled_rules_fails_closed(self, tmp_path, monkeypatch):
+        """Finding 1 (2026-09-09 final whole-branch review): ForexSessionStrategy's
+        own constructor default for its one rule is True, and gbpusd_1h.json
+        has no enabled_rules key to override it with. If TimeframeWorker._run()
+        left the strategy at that constructor default, the rule would be LIVE
+        from construction until refresh_settings() (the pre_run_hook) first
+        succeeds — and RealtimeSignalGenerator.start() only logs a
+        pre_run_hook failure, it still calls run_once() regardless. A
+        transient DB error on the very first candle (e.g. a fresh deploy
+        racing Postgres) would let GBPUSD/EURUSD signal live before
+        enabled_forex_symbols is ever consulted. _run() must therefore force
+        every rule to False right after construction whenever there's no
+        enabled_rules key to read — fail CLOSED at construction time, never
+        rely on a later successful settings read to be the only thing that
+        disables it. This test calls worker._run() directly and never invokes
+        the pre_run_hook/refresh_settings — it proves the construction-time
+        default alone, not the settings-driven override (which is covered by
+        test_settings_driven_rules.py::TestForexSymbolEnabling)."""
         monkeypatch.setattr(svc_module, "__file__", str(tmp_path / "run_multi_timeframe_service.py"))
         tuned_dir = tmp_path / "tuned_configs"
         tuned_dir.mkdir()
@@ -84,9 +101,24 @@ class TestForexWorkerDispatch:
             worker._run()
 
         strategy = mock_generator_cls.call_args.kwargs["strategy"]
-        # ForexSessionStrategy's own constructor default is True — no
-        # enabled_rules in the tuned config to override it with.
-        assert strategy.rules_enabled == {"asian_range_london_breakout": True}
+        assert strategy.rules_enabled == {"asian_range_london_breakout": False}
+
+    def test_gbpusd_no_tuned_config_file_at_all_also_fails_closed(self, tmp_path, monkeypatch):
+        """Finding 1's fail-closed fix must also cover the fallback branch
+        (no tuned config file on disk at all, not just one missing
+        enabled_rules) — same unsafe constructor-default exposure otherwise.
+        No pre_run_hook/refresh_settings is invoked here either."""
+        monkeypatch.setattr(svc_module, "__file__", str(tmp_path / "run_multi_timeframe_service.py"))
+        worker = make_worker(svc_module.GBPUSD_1H_SPEC, tmp_path)  # no tuned_configs dir
+        fake_generator = MagicMock()
+
+        with patch.object(svc_module, "create_datafeed"), \
+             patch.object(svc_module, "RealtimeSignalGenerator", return_value=fake_generator) as mock_generator_cls, \
+             patch.object(svc_module, "SignalOutcomeTracker"):
+            worker._run()
+
+        strategy = mock_generator_cls.call_args.kwargs["strategy"]
+        assert strategy.rules_enabled == {"asian_range_london_breakout": False}
 
     def test_xauusd_worker_still_loads_1h_json_by_filename(self, tmp_path, monkeypatch):
         """Regression: tuned config path must come from

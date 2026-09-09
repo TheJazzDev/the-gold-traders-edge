@@ -212,6 +212,22 @@ class TestForexSymbolEnabling:
         kwargs = mock_generator_cls.call_args.kwargs
         return kwargs["strategy"], kwargs["pre_run_hook"]
 
+    def test_gbpusd_worker_fails_closed_before_refresh_settings_ever_runs(self, tmp_path):
+        """Finding 1 (2026-09-09 final whole-branch review): the rule must
+        be off from the moment the strategy is constructed, not only once a
+        settings refresh has run. This test captures the strategy kwarg
+        straight out of worker._run() and asserts rules_enabled is False
+        WITHOUT ever invoking the returned pre_run_hook — proving the
+        construction-time fail-closed default itself, independent of
+        _run_and_capture_hook()'s own refresh() call used by the other
+        tests in this class."""
+        worker = self._forex_worker(tmp_path, svc_module.GBPUSD_1H_SPEC)
+        seed_settings(worker.database_url)  # defaults only — enabled_forex_symbols == []
+
+        strategy, _refresh = self._run_and_capture_hook(worker, tmp_path)
+
+        assert strategy.rules_enabled["asian_range_london_breakout"] is False
+
     def test_gbpusd_worker_disabled_by_default(self, tmp_path):
         worker = self._forex_worker(tmp_path, svc_module.GBPUSD_1H_SPEC)
         seed_settings(worker.database_url)  # defaults only — enabled_forex_symbols == []

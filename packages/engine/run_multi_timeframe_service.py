@@ -49,7 +49,7 @@ from report import build_report_text
 # Configure logging
 logging.basicConfig(
     level=logging.INFO,
-    format='%(asctime)s - [%(threadName)-10s] - %(levelname)s - %(message)s',
+    format='%(asctime)s - [%(threadName)-14s] - %(levelname)s - %(message)s',
     handlers=[
         logging.FileHandler('multi_timeframe_service.log'),
         logging.StreamHandler()
@@ -148,7 +148,7 @@ class TimeframeWorker:
         """Start the worker thread."""
         self.thread = threading.Thread(
             target=self._run,
-            name=f"TF-{self.timeframe}",
+            name=f"TF-{self.worker_id}",
             daemon=True
         )
         self.is_running = True
@@ -224,10 +224,31 @@ class TimeframeWorker:
                 if 'enabled_rules' in tuned:
                     for name in strategy.rules_enabled:
                         strategy.rules_enabled[name] = name in tuned['enabled_rules']
+                else:
+                    # Fail CLOSED, not open: a forex tuned config has no
+                    # enabled_rules key, so without this the strategy would
+                    # sit at its own constructor default (True for
+                    # ForexSessionStrategy) from the moment it's constructed
+                    # until refresh_settings() (the pre_run_hook) first
+                    # succeeds. RealtimeSignalGenerator.start() only logs a
+                    # pre_run_hook failure and still runs run_once() — so a
+                    # transient DB error on the very first candle (e.g. a
+                    # fresh deploy racing Postgres accepting connections)
+                    # would let the rule fire live before anything ever
+                    # reads enabled_forex_symbols. Only a *successful*
+                    # refresh_settings() read may ever turn a rule back on.
+                    # See docs/superpowers/specs/2026-09-09-gbpusd-eurusd-worker-wiring-design.md.
+                    for name in strategy.rules_enabled:
+                        strategy.rules_enabled[name] = False
                 expiry_hours = tuned.get('expiry_hours', 48.0)
                 logger.info(f"   [{self.worker_id}] Loaded tuned config from {tuned_config_path}")
             else:
                 strategy = self.spec.strategy_class()
+                if self.spec.strategy_class is not GoldStrategy:
+                    # Same fail-closed rationale as above, for the
+                    # no-tuned-config-file-at-all fallback path.
+                    for name in strategy.rules_enabled:
+                        strategy.rules_enabled[name] = False
                 expiry_hours = 48.0
                 logger.warning(f"   [{self.worker_id}] No tuned config found at {tuned_config_path}, using untuned defaults")
 
@@ -415,7 +436,7 @@ class TimeframeWorker:
             self.generator.start()
 
         except Exception as e:
-            logger.error(f"❌ [{self.timeframe}] Worker failed: {e}", exc_info=True)
+            logger.error(f"❌ [{self.worker_id}] Worker failed: {e}", exc_info=True)
             self.is_running = False
 
 
@@ -499,7 +520,17 @@ class MultiTimeframeService:
                 enabled = PROFITABLE_RULES if spec.symbol == 'XAUUSD' else []
             print(f"📈 [{worker_id}] Rules in tuned config ({len(enabled)}):")
             for rule in enabled:
-                print(f"   ✅ {rule}")
+                if spec.symbol == 'XAUUSD':
+                    print(f"   ✅ {rule}")
+                else:
+                    # A fresh forex worker always starts with its rule
+                    # forced False at construction time (fail-closed — see
+                    # Finding 1, docs/superpowers/specs/2026-09-09-gbpusd-eurusd-worker-wiring-design.md)
+                    # until enabled_forex_symbols lists this symbol. A bare
+                    # ✅ here would be misleading exactly when an operator
+                    # is verifying "is this shipped disabled" after a
+                    # deploy.
+                    print(f"   ⏸ {rule} (disabled — not yet in enabled_forex_symbols)")
         print(f"\n💾 Database: {self.database_url}")
         print(f"🤖 Auto-Trading: {'✅ ENABLED' if self.enable_trading else '❌ DISABLED (signals only)'}")
         if self.enable_trading and self.mt5_config:

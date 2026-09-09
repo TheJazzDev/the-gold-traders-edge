@@ -23,7 +23,7 @@ elsewhere, work moved to hypotheses native to other instruments — see
 
 ## Other instruments
 
-### GBPUSD / EURUSD: Asian Range London Breakout — validated, not yet live
+### GBPUSD / EURUSD: Asian Range London Breakout — validated, live but disabled
 - **Source:** new hypothesis (2026-09-09), see
   `docs/superpowers/specs/2026-09-09-gbpusd-asian-range-breakout-design.md`.
 - **Hypothesis:** GBP liquidity concentrates in the London session — price
