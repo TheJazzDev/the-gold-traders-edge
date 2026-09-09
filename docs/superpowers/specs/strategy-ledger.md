@@ -13,6 +13,40 @@ only they used — see commit `ba6fba7`. `gold_strategy.py` now implements
 only `order_block_retest`. This document is the only remaining record of
 what each deleted rule did and why it failed — that's the point of it.
 
+**2026-09-09:** scope widened beyond gold. Order Block Retest doesn't
+transfer to other instruments (see "Tried and ruled out — other
+instruments" below), so rather than keep porting a gold-native strategy
+elsewhere, work moved to hypotheses native to other instruments — see
+"Other instruments" below.
+
+---
+
+## Other instruments
+
+### GBPUSD / EURUSD: Asian Range London Breakout — validated, not yet live
+- **Source:** new hypothesis (2026-09-09), see
+  `docs/superpowers/specs/2026-09-09-gbpusd-asian-range-breakout-design.md`.
+- **Hypothesis:** GBP liquidity concentrates in the London session — price
+  consolidates during the quiet Asian session (00:00-07:00 UTC) and breaks
+  out at London open (07:00 UTC). A real, causally-grounded forex pattern,
+  structurally distinct from every gold rule (session regime-change, not
+  zone-retest/fib-level).
+- **Validated via real 70/30 train/test split, no parameter sweep**
+  (deliberately — see the methodology note below): GBPUSD test PF 1.58
+  (47 trades), EURUSD test PF 1.18 (50 trades), both robust across 5
+  parameter variations (GBPUSD 1.25-1.76, EURUSD 1.02-1.64 — not a
+  knife-edge result). EURUSD weaker than GBPUSD, consistent with GBP being
+  more concentrated in the London session — the result is shaped the way
+  the mechanism predicts, not noise.
+- **Implemented** as a new `ForexSessionStrategy` class (not a
+  `GoldStrategy` rule — a genuinely different instrument gets its own
+  module), with full test coverage. Formal validation via
+  `tune_forex_session_strategy.py` confirms: GBPUSD ENABLED, EURUSD
+  ENABLED (`tuned_configs/gbpusd_1h.json`, `tuned_configs/eurusd_1h.json`).
+- **Verdict:** ✅ Validated on both pairs. **Not wired into the live
+  multi-timeframe service** — going live is a separate, later decision,
+  same convention as every GoldStrategy rule.
+
 ---
 
 ## Operational incidents (not strategy hypotheses, but recorded here for the same reason)
