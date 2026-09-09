@@ -29,18 +29,17 @@ class WorkerStatus:
 
 def derive_worker_status(
     heartbeat: Dict[str, Any],
-    timeframe: str,
+    worker_id: str,
     now: datetime,
     stale_after_seconds: int = DEFAULT_STALE_AFTER_SECONDS,
 ) -> WorkerStatus:
-    """Compute real worker status from a heartbeat payload (see module docstring)."""
+    """Compute real worker status from a heartbeat payload (see module
+    docstring). worker_id is "SYMBOL:timeframe" (e.g. "XAUUSD:1h") — an
+    exact key lookup, no fallback to a different worker's data, since
+    worker IDs are unambiguous once every worker has its own symbol."""
     heartbeat = heartbeat or {}
     workers = heartbeat.get('workers') or {}
-    # Falling back to "whichever worker is in the heartbeat" is fine while
-    # TIMEFRAMES = ['1h'] is the only live timeframe (see
-    # run_multi_timeframe_service.py); revisit once a second timeframe runs
-    # live, since this would then pick an arbitrary one on a key miss.
-    worker_data = workers.get(timeframe.lower()) or next(iter(workers.values()), None)
+    worker_data = workers.get(worker_id)
 
     if worker_data is None:
         return WorkerStatus(is_running=False, candles_processed=0, signals_generated=0, uptime_hours=None)
