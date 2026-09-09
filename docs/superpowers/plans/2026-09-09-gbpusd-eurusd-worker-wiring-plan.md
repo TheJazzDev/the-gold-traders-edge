@@ -2298,7 +2298,214 @@ git commit -m "feat: per-symbol strategy registry for /v1/settings/strategies"
 
 ---
 
-### Task 10: `/v1/signals/stats/performance` gains an optional `symbol` filter
+### Task 10: Controls page — gate the strategy toggle to gold rows only
+
+**Added during execution, not in the original plan.** Task 9's task
+reviewer found a real, load-bearing gap: `/v1/settings/strategies` now
+returns 3 entries (`order_block_retest`/XAUUSD,
+`asian_range_london_breakout`/GBPUSD, `asian_range_london_breakout`/EURUSD)
+instead of 1, but `apps/web/app/controls/page.tsx` — a live, working admin
+page — was never updated for this. Two concrete bugs would ship the moment
+this backend change deploys: (1) `key={strategy.key}` (page.tsx:229)
+collides for the GBPUSD/EURUSD rows (both share the rule key
+`asian_range_london_breakout`); (2) `toggleStrategy(strategy.key)`
+(page.tsx:54-58) unconditionally writes `enabled_strategies` for ANY row's
+toggle — flipping either forex row's switch would write
+`'asian_range_london_breakout'` into gold's `enabled_strategies` setting,
+corrupting its *meaning* (not its shape) in a way GoldStrategy's
+`rules_enabled` has no key for. This is exactly the kind of live-admin-UI
+corruption the plan's "no shape change to `enabled_strategies`" constraint
+was meant to prevent, just via a path (a second symbol's own toggle)
+nobody had considered when that constraint was written.
+
+Additionally, `page.tsx:250` reads `strategy.timeframe`, a field
+`build_strategies_list` (Task 9) no longer returns — this would render
+"Not yet validated on undefined" for any non-validated row.
+
+**Files:**
+- Modify: `apps/web/lib/types.ts` (`StrategyPerformance` — drop
+  `timeframe`, add `symbol`)
+- Modify: `apps/web/app/controls/page.tsx` (row `key`, toggle gating, copy
+  fix)
+
+**Interfaces:**
+- Consumes: `/v1/settings/strategies`'s response shape from Task 9 (each
+  entry has `key`, `symbol`, `name`, `enabled`, `validated`,
+  `profit_factor`, `win_rate`, `total_trades`, `net_profit_pct` — no
+  `timeframe`).
+- Produces: the Controls page renders one row per entry with a unique key,
+  shows each entry's `symbol` so GBPUSD/EURUSD rows are visually
+  distinguishable, and only lets XAUUSD's row toggle `enabled_strategies`
+  — non-XAUUSD rows render their switch disabled (visible, informative,
+  not interactive), so there is no code path left that can write a forex
+  rule name into `enabled_strategies`.
+
+- [ ] **Step 1: Update the type**
+
+In `apps/web/lib/types.ts`, replace:
+
+```typescript
+export interface StrategyPerformance {
+  key: string;
+  name: string;
+  enabled: boolean;
+  timeframe: string;
+  validated: boolean;
+  profit_factor: number | null;
+  win_rate: number | null;
+  total_trades: number | null;
+  net_profit_pct: number | null;
+}
+```
+
+with:
+
+```typescript
+export interface StrategyPerformance {
+  key: string;
+  symbol: string;
+  name: string;
+  enabled: boolean;
+  validated: boolean;
+  profit_factor: number | null;
+  win_rate: number | null;
+  total_trades: number | null;
+  net_profit_pct: number | null;
+}
+```
+
+- [ ] **Step 2: Gate the toggle and fix the row key/copy**
+
+In `apps/web/app/controls/page.tsx`, replace:
+
+```typescript
+  const toggleStrategy = (key: string) => {
+    const next = enabledStrategies.includes(key)
+      ? enabledStrategies.filter((k) => k !== key)
+      : [...enabledStrategies, key];
+    updateSetting.mutate({ key: "enabled_strategies", value: next });
+  };
+```
+
+with:
+
+```typescript
+  // Only XAUUSD's rows are backed by the enabled_strategies setting.
+  // GBPUSD/EURUSD share ForexSessionStrategy's single rule name
+  // (asian_range_london_breakout) with each other, so writing their
+  // toggle into enabled_strategies would corrupt gold's own rule list —
+  // their toggle is gated off below instead (see the Switch's `disabled`
+  // prop). Enabling either forex symbol live is a separate, deliberate
+  // decision (enabled_forex_symbols), not made from this page yet.
+  const toggleStrategy = (key: string) => {
+    const next = enabledStrategies.includes(key)
+      ? enabledStrategies.filter((k) => k !== key)
+      : [...enabledStrategies, key];
+    updateSetting.mutate({ key: "enabled_strategies", value: next });
+  };
+```
+
+Replace the row-rendering block:
+
+```typescript
+              {strategies?.map((strategy) => (
+                <div
+                  key={strategy.key}
+                  className="flex items-center justify-between gap-3 p-3 sm:p-4 rounded-lg bg-black/20 hover:bg-black/30 transition-all"
+                >
+                  <div className="flex items-center gap-3 sm:gap-4 min-w-0">
+                    <Switch checked={strategy.enabled} onCheckedChange={() => toggleStrategy(strategy.key)} />
+                    <div className="min-w-0">
+                      <p className="text-sm sm:text-base font-medium text-white mb-0.5 sm:mb-1 truncate">{strategy.name}</p>
+                      {strategy.validated ? (
+                        <div className="flex items-center gap-2 sm:gap-3 text-xs text-gray-400 flex-wrap">
+                          <span>
+                            Win rate: <span className="text-white font-medium">{strategy.win_rate?.toFixed(1)}%</span>
+                          </span>
+                          <span>
+                            PF:{" "}
+                            <span className={strategy.profit_factor && strategy.profit_factor >= 1 ? "text-green-400 font-medium" : "text-red-400 font-medium"}>
+                              {formatProfitFactor(strategy.profit_factor)}
+                            </span>
+                          </span>
+                          <span>{strategy.total_trades} trades</span>
+                        </div>
+                      ) : (
+                        <span className="text-xs text-amber-400">Not yet validated on {strategy.timeframe}</span>
+                      )}
+                    </div>
+                  </div>
+                  {strategy.validated && strategy.profit_factor !== null && strategy.profit_factor < 1 && (
+                    <Badge variant="outline" className="border-red-500/40 text-red-400 shrink-0 hidden sm:inline-flex">
+                      Unprofitable
+                    </Badge>
+                  )}
+                </div>
+              ))}
+```
+
+with:
+
+```typescript
+              {strategies?.map((strategy) => (
+                <div
+                  key={`${strategy.symbol}-${strategy.key}`}
+                  className="flex items-center justify-between gap-3 p-3 sm:p-4 rounded-lg bg-black/20 hover:bg-black/30 transition-all"
+                >
+                  <div className="flex items-center gap-3 sm:gap-4 min-w-0">
+                    <Switch
+                      checked={strategy.enabled}
+                      disabled={strategy.symbol !== "XAUUSD"}
+                      onCheckedChange={() => toggleStrategy(strategy.key)}
+                    />
+                    <div className="min-w-0">
+                      <p className="text-sm sm:text-base font-medium text-white mb-0.5 sm:mb-1 truncate">
+                        {strategy.name} <span className="text-gray-500 font-normal">· {strategy.symbol}</span>
+                      </p>
+                      {strategy.validated ? (
+                        <div className="flex items-center gap-2 sm:gap-3 text-xs text-gray-400 flex-wrap">
+                          <span>
+                            Win rate: <span className="text-white font-medium">{strategy.win_rate?.toFixed(1)}%</span>
+                          </span>
+                          <span>
+                            PF:{" "}
+                            <span className={strategy.profit_factor && strategy.profit_factor >= 1 ? "text-green-400 font-medium" : "text-red-400 font-medium"}>
+                              {formatProfitFactor(strategy.profit_factor)}
+                            </span>
+                          </span>
+                          <span>{strategy.total_trades} trades</span>
+                        </div>
+                      ) : (
+                        <span className="text-xs text-amber-400">Not yet validated</span>
+                      )}
+                    </div>
+                  </div>
+                  {strategy.validated && strategy.profit_factor !== null && strategy.profit_factor < 1 && (
+                    <Badge variant="outline" className="border-red-500/40 text-red-400 shrink-0 hidden sm:inline-flex">
+                      Unprofitable
+                    </Badge>
+                  )}
+                </div>
+              ))}
+```
+
+- [ ] **Step 3: Verify with a type check**
+
+Run: `cd apps/web && npx tsc --noEmit`
+Expected: no new type errors introduced by this change (pre-existing
+unrelated errors, if any, are not this task's concern — note them if
+present and confirm they predate this change).
+
+- [ ] **Step 4: Commit**
+
+```bash
+git add apps/web/lib/types.ts apps/web/app/controls/page.tsx
+git commit -m "fix: gate the Controls strategy toggle to XAUUSD rows, fix forex row key collision"
+```
+
+---
+
+### Task 11: `/v1/signals/stats/performance` gains an optional `symbol` filter
 
 **Files:**
 - Modify: `packages/api/src/routes/signals.py` (`get_performance_stats`)
@@ -2389,7 +2596,7 @@ git commit -m "feat: optional symbol filter on /v1/signals/stats/performance"
 
 ---
 
-### Task 11: Full regression run, ledger update, final commit
+### Task 12: Full regression run, ledger update, final commit
 
 **Files:**
 - Modify: `docs/superpowers/specs/strategy-ledger.md` (GBPUSD/EURUSD entry)
