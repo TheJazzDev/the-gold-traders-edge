@@ -187,19 +187,30 @@ class YahooFinanceDataFeed(RealtimeDataFeed):
         super().__init__(symbol, timeframe, lookback_periods)
         self.yf_ticker = None
 
-        # Map XAUUSD to Yahoo ticker
+        # Map internal symbol to Yahoo Finance ticker. No fallback default —
+        # an unmapped symbol must fail loudly (connect() raises) rather than
+        # silently fetching gold data, which is what a bare `.get(symbol,
+        # "GC=F")` used to do. See
+        # docs/superpowers/specs/2026-09-09-gbpusd-eurusd-worker-wiring-design.md.
         self.ticker_map = {
-            "XAUUSD": "GC=F",  # Gold futures
-            "XAGUSD": "SI=F",  # Silver futures
+            "XAUUSD": "GC=F",     # Gold futures
+            "XAGUSD": "SI=F",     # Silver futures
+            "GBPUSD": "GBPUSD=X",
+            "EURUSD": "EURUSD=X",
         }
 
     def connect(self) -> bool:
         """Initialize Yahoo Finance connection."""
+        if self.symbol not in self.ticker_map:
+            raise ValueError(
+                f"No Yahoo Finance ticker mapping for symbol '{self.symbol}' "
+                f"— known symbols: {sorted(self.ticker_map.keys())}"
+            )
         try:
             import yfinance as yf
-            self.yf_ticker = yf.Ticker(self.ticker_map.get(self.symbol, "GC=F"))
+            self.yf_ticker = yf.Ticker(self.ticker_map[self.symbol])
             self.is_connected = True
-            print(f"✅ Connected to Yahoo Finance ({self.ticker_map.get(self.symbol)})")
+            print(f"✅ Connected to Yahoo Finance ({self.ticker_map[self.symbol]})")
             return True
         except ImportError:
             print("❌ yfinance not installed. Install with: pip install yfinance")
