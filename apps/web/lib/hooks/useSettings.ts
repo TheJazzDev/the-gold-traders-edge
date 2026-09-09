@@ -34,7 +34,7 @@ export function useUpdateSetting() {
     onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ["settings"] });
       queryClient.invalidateQueries({ queryKey: ["service-status"] });
-      if (data.key === "enabled_strategies") {
+      if (data.key === "enabled_strategies" || data.key === "enabled_forex_symbols") {
         queryClient.invalidateQueries({ queryKey: ["strategies"] });
       }
       toast.success(`Updated ${data.key}`, {
