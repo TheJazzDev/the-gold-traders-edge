@@ -104,9 +104,9 @@ export interface Trade {
  * performance on the running timeframe — see GET /v1/settings/strategies. */
 export interface StrategyPerformance {
   key: string;
+  symbol: string;
   name: string;
   enabled: boolean;
-  timeframe: string;
   validated: boolean;
   profit_factor: number | null;
   win_rate: number | null;

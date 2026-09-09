@@ -51,6 +51,13 @@ export default function ControlsPage() {
   const dryRun = dryRunSetting?.typed_value === true;
   const enabledStrategies = strategies?.filter((s) => s.enabled).map((s) => s.key) || [];
 
+  // Only XAUUSD's rows are backed by the enabled_strategies setting.
+  // GBPUSD/EURUSD share ForexSessionStrategy's single rule name
+  // (asian_range_london_breakout) with each other, so writing their
+  // toggle into enabled_strategies would corrupt gold's own rule list —
+  // their toggle is gated off below instead (see the Switch's `disabled`
+  // prop). Enabling either forex symbol live is a separate, deliberate
+  // decision (enabled_forex_symbols), not made from this page yet.
   const toggleStrategy = (key: string) => {
     const next = enabledStrategies.includes(key)
       ? enabledStrategies.filter((k) => k !== key)
@@ -226,13 +233,19 @@ export default function ControlsPage() {
             <div className="space-y-2 sm:space-y-3">
               {strategies?.map((strategy) => (
                 <div
-                  key={strategy.key}
+                  key={`${strategy.symbol}-${strategy.key}`}
                   className="flex items-center justify-between gap-3 p-3 sm:p-4 rounded-lg bg-black/20 hover:bg-black/30 transition-all"
                 >
                   <div className="flex items-center gap-3 sm:gap-4 min-w-0">
-                    <Switch checked={strategy.enabled} onCheckedChange={() => toggleStrategy(strategy.key)} />
+                    <Switch
+                      checked={strategy.enabled}
+                      disabled={strategy.symbol !== "XAUUSD"}
+                      onCheckedChange={() => toggleStrategy(strategy.key)}
+                    />
                     <div className="min-w-0">
-                      <p className="text-sm sm:text-base font-medium text-white mb-0.5 sm:mb-1 truncate">{strategy.name}</p>
+                      <p className="text-sm sm:text-base font-medium text-white mb-0.5 sm:mb-1 truncate">
+                        {strategy.name} <span className="text-gray-500 font-normal">· {strategy.symbol}</span>
+                      </p>
                       {strategy.validated ? (
                         <div className="flex items-center gap-2 sm:gap-3 text-xs text-gray-400 flex-wrap">
                           <span>
@@ -247,7 +260,7 @@ export default function ControlsPage() {
                           <span>{strategy.total_trades} trades</span>
                         </div>
                       ) : (
-                        <span className="text-xs text-amber-400">Not yet validated on {strategy.timeframe}</span>
+                        <span className="text-xs text-amber-400">Not yet validated</span>
                       )}
                     </div>
                   </div>
