@@ -24,16 +24,9 @@ from database.settings_repository import SettingsRepository
 from sqlalchemy.orm import Session
 
 from src.worker_status import derive_worker_status
+from src.strategies_registry import build_strategies_list
 
 router = APIRouter(prefix="/v1/settings", tags=["settings"])
-
-# Canonical rule keys (must match GoldStrategy.rules_enabled) with display
-# names. Only order_block_retest survived validation — every other rule
-# tried was ruled out and its code deleted; see
-# docs/superpowers/specs/strategy-ledger.md for the full record.
-STRATEGY_DISPLAY_NAMES = {
-    'order_block_retest': 'Order Block Retest',
-}
 
 # Only 1h is currently tuned/validated and actually running live — see
 # WORKER_SPECS in run_multi_timeframe_service.py.
@@ -176,39 +169,43 @@ async def get_settings_by_category(db: Session = Depends(get_db)):
 @router.get("/strategies")
 async def get_strategies(db: Session = Depends(get_db)):
     """
-    List every strategy rule with its live enabled/disabled state (from the
-    `enabled_strategies` setting, which the engine now actually reads on
-    every candle close) alongside its real validated performance on the
-    live timeframe, so enabling a rule is an informed choice rather than a
-    silent one — several rules are unprofitable under the live config even
-    though they were profitable in isolation during tuning.
+    List every strategy rule, across every instrument, with its live
+    enabled/disabled state and real validated performance, so enabling a
+    rule is an informed choice rather than a silent one. See
+    docs/superpowers/specs/2026-09-09-gbpusd-eurusd-worker-wiring-design.md.
 
     Declared above GET /{key} so it isn't swallowed by that catch-all route.
     """
     repo = SettingsRepository(db)
-    enabled = set(repo.get('enabled_strategies', default=[]) or [])
+    enabled_strategies = repo.get('enabled_strategies', default=[]) or []
+    enabled_forex_symbols = repo.get('enabled_forex_symbols', default=[]) or []
 
-    validation: Dict[str, Any] = {}
-    tuned_config_path = ENGINE_DIR / 'tuned_configs' / f'{LIVE_TIMEFRAME}.json'
-    if tuned_config_path.exists():
-        with open(tuned_config_path) as f:
+    validation_by_symbol: Dict[str, Dict[str, Any]] = {}
+
+    gold_config_path = ENGINE_DIR / 'tuned_configs' / f'{LIVE_TIMEFRAME}.json'
+    if gold_config_path.exists():
+        with open(gold_config_path) as f:
             tuned = json.load(f)
-        validation = tuned.get('final_shared_config_validation', {})
+        validation_by_symbol['XAUUSD'] = tuned.get('final_shared_config_validation', {})
 
-    return [
-        {
-            "key": key,
-            "name": STRATEGY_DISPLAY_NAMES.get(key, key),
-            "enabled": key in enabled,
-            "timeframe": LIVE_TIMEFRAME,
-            "validated": key in validation,
-            "profit_factor": validation.get(key, {}).get('profit_factor'),
-            "win_rate": validation.get(key, {}).get('win_rate'),
-            "total_trades": validation.get(key, {}).get('total_trades'),
-            "net_profit_pct": validation.get(key, {}).get('net_profit_pct'),
-        }
-        for key in STRATEGY_DISPLAY_NAMES
-    ]
+    forex_config_filenames = {'GBPUSD': 'gbpusd_1h.json', 'EURUSD': 'eurusd_1h.json'}
+    for symbol, filename in forex_config_filenames.items():
+        forex_config_path = ENGINE_DIR / 'tuned_configs' / filename
+        if forex_config_path.exists():
+            with open(forex_config_path) as f:
+                tuned = json.load(f)
+            # Forex tuned configs have a `test` block (train/test split
+            # results), not gold's per-rule final_shared_config_validation
+            # dict — normalize into the same {rule_key: stats} shape here.
+            validation_by_symbol[symbol] = {
+                'asian_range_london_breakout': tuned.get('test', {}),
+            }
+
+    return build_strategies_list(
+        enabled_strategies=enabled_strategies,
+        enabled_forex_symbols=enabled_forex_symbols,
+        validation_by_symbol=validation_by_symbol,
+    )
 
 
 @router.get("/{key}", response_model=SettingResponse)
