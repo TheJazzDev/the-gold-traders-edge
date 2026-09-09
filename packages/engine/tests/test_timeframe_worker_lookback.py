@@ -18,9 +18,10 @@ import run_multi_timeframe_service as svc_module
 from signals.gold_strategy import GoldStrategy
 
 
-def make_worker(timeframe="1h"):
+def make_worker(spec=None):
+    spec = spec or svc_module.XAUUSD_1H_SPEC
     worker = svc_module.TimeframeWorker.__new__(svc_module.TimeframeWorker)
-    worker.timeframe = timeframe
+    worker.spec = spec
     worker.database_url = "sqlite:///:memory:"
     worker.shared_dedup_subscriber = MagicMock()
     worker.telegram_subscriber = MagicMock()
@@ -42,7 +43,7 @@ class TestLookbackPeriodsSizing:
         }))
         monkeypatch.setattr(svc_module, "__file__", str(tmp_path / "run_multi_timeframe_service.py"))
 
-        worker = make_worker("1h")
+        worker = make_worker()
         fake_generator = MagicMock()
 
         with patch.object(svc_module, "create_datafeed") as mock_create_feed, \
@@ -61,7 +62,7 @@ class TestLookbackPeriodsSizing:
         so lookback_periods must stay comfortably above that too."""
         monkeypatch.setattr(svc_module, "__file__", str(tmp_path / "run_multi_timeframe_service.py"))
 
-        worker = make_worker("4h")  # no tuned_configs/4h.json exists
+        worker = make_worker(svc_module.WorkerSpec(symbol='XAUUSD', strategy_class=svc_module.GoldStrategy, timeframe='4h', tuned_config_filename='4h.json'))  # no tuned_configs/4h.json exists
         fake_generator = MagicMock()
 
         with patch.object(svc_module, "create_datafeed") as mock_create_feed, \

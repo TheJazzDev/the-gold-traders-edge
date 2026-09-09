@@ -50,7 +50,7 @@ def seed_settings(database_url, **overrides):
 def run_worker_and_capture_hook(worker, tmp_path):
     tuned_dir = tmp_path / "tuned_configs"
     tuned_dir.mkdir(exist_ok=True)
-    (tuned_dir / f"{worker.timeframe}.json").write_text(json.dumps({
+    (tuned_dir / worker.spec.tuned_config_filename).write_text(json.dumps({
         "config": {**GoldStrategy.DEFAULT_CONFIG, "trend_lookback": 200},
         "enabled_rules": ["order_block_retest"],
         "expiry_hours": 143,
@@ -69,7 +69,7 @@ def run_worker_and_capture_hook(worker, tmp_path):
 def run_worker_and_capture_all_kwargs(worker, tmp_path):
     tuned_dir = tmp_path / "tuned_configs"
     tuned_dir.mkdir(exist_ok=True)
-    (tuned_dir / f"{worker.timeframe}.json").write_text(json.dumps({
+    (tuned_dir / worker.spec.tuned_config_filename).write_text(json.dumps({
         "config": {**GoldStrategy.DEFAULT_CONFIG, "trend_lookback": 200},
         "enabled_rules": ["order_block_retest"],
         "expiry_hours": 143,

@@ -202,24 +202,34 @@ class TimeframeWorker:
         try:
             logger.info(f"🚀 Initializing {self.timeframe} generator...")
 
-            # Load the tuned config for this timeframe if one exists;
-            # otherwise fall back to defaults (no other timeframe has a
-            # tuned config yet — see TIMEFRAMES above). Done before creating
-            # the data feed/generator because both need lookback_periods
-            # derived from the config actually in use (see below).
-            tuned_config_path = Path(__file__).parent / 'tuned_configs' / f'{self.timeframe}.json'
+            # Load the tuned config for this worker if one exists; otherwise
+            # fall back to defaults. Done before creating the data
+            # feed/generator because both need lookback_periods derived
+            # from the config actually in use (see below).
+            #
+            # Config shape varies: gold's tuned_configs/1h.json has
+            # `enabled_rules` (a multi-rule strategy's initial rule
+            # selection) and `expiry_hours`; GBPUSD/EURUSD's tuned configs
+            # (written by tune_forex_session_strategy.py) have neither —
+            # ForexSessionStrategy has exactly one rule, and its live
+            # enabled/disabled state comes entirely from the
+            # enabled_forex_symbols DB setting via refresh_settings() below,
+            # not from the tuned config file. See
+            # docs/superpowers/specs/2026-09-09-gbpusd-eurusd-worker-wiring-design.md.
+            tuned_config_path = Path(__file__).parent / 'tuned_configs' / self.spec.tuned_config_filename
             if tuned_config_path.exists():
                 with open(tuned_config_path) as f:
                     tuned = json.load(f)
-                strategy = GoldStrategy(config=tuned['config'])
-                for name in strategy.rules_enabled:
-                    strategy.rules_enabled[name] = name in tuned['enabled_rules']
-                expiry_hours = tuned['expiry_hours']
-                logger.info(f"   [{self.timeframe}] Loaded tuned config from {tuned_config_path}")
+                strategy = self.spec.strategy_class(config=tuned['config'])
+                if 'enabled_rules' in tuned:
+                    for name in strategy.rules_enabled:
+                        strategy.rules_enabled[name] = name in tuned['enabled_rules']
+                expiry_hours = tuned.get('expiry_hours', 48.0)
+                logger.info(f"   [{self.worker_id}] Loaded tuned config from {tuned_config_path}")
             else:
-                strategy = GoldStrategy()
+                strategy = self.spec.strategy_class()
                 expiry_hours = 48.0
-                logger.warning(f"   [{self.timeframe}] No tuned config found at {tuned_config_path}, using untuned defaults")
+                logger.warning(f"   [{self.worker_id}] No tuned config found at {tuned_config_path}, using untuned defaults")
 
             enabled_names = [name for name, on in strategy.rules_enabled.items() if on]
             logger.info(f"   [{self.timeframe}] Enabled rules: {enabled_names}")
@@ -294,7 +304,16 @@ class TimeframeWorker:
             # current_idx then maxes out at 199, permanently below the gate,
             # so no signal could ever fire. Size the fetch comfortably above
             # whatever the active config actually requires.
-            lookback_periods = max(200, strategy.config['trend_lookback'] + 50)
+            #
+            # ForexSessionStrategy has no trend_lookback key at all — its
+            # own gate is lookback_candles + atr_period (26 by default), a
+            # much smaller window. Branch on which key the config actually
+            # has rather than assuming gold's shape.
+            if 'trend_lookback' in strategy.config:
+                min_gate = strategy.config['trend_lookback']
+            else:
+                min_gate = strategy.config.get('lookback_candles', 0) + strategy.config.get('atr_period', 0)
+            lookback_periods = max(200, min_gate + 50)
 
             # Create data feed (use setting or environment variable)
             datafeed_type = os.getenv('DATA_FEED_TYPE', 'yahoo')  # Default to yahoo for backward compatibility
@@ -302,14 +321,14 @@ class TimeframeWorker:
 
             data_feed = create_datafeed(
                 feed_type=datafeed_type,
-                symbol='XAUUSD',
+                symbol=self.spec.symbol,
                 timeframe=self.timeframe,
                 lookback_periods=lookback_periods
             )
 
             outcome_tracker = SignalOutcomeTracker(
                 database_url=self.database_url,
-                symbol='XAUUSD',
+                symbol=self.spec.symbol,
                 timeframe=self.timeframe,
                 expiry_hours=expiry_hours,
                 telegram_subscriber=self.telegram_subscriber,
