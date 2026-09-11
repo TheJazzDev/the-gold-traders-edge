@@ -12,7 +12,7 @@ the signal generation code.
 """
 
 from abc import ABC, abstractmethod
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Optional, List, Dict
 import pandas as pd
 import time
@@ -152,6 +152,33 @@ class RealtimeDataFeed(ABC):
         while datetime.now() < next_close:
             time.sleep(check_interval)
 
+    def _drop_incomplete_candle(self, df: pd.DataFrame) -> pd.DataFrame:
+        """
+        Drop any trailing candle whose period has not yet elapsed.
+
+        Upstream feeds include the currently-forming bar as the last row,
+        but every consumer here treats `df.iloc[-1]` as a *closed* candle:
+        RealtimeSignalGenerator evaluates the strategy at that index, and
+        ForexSessionStrategy in particular gates on its hour and compares
+        its close to the Asian range — semantics only a completed candle
+        satisfies. Without this, correctness depends on a race between the
+        worker's wake-up (~11s past the hour) and the upstream's publish
+        latency; if the new bar ever lands first, the strategy silently
+        evaluates a seconds-old partial candle and skips its real window.
+
+        Compares in UTC explicitly: the index is naive UTC by convention
+        (see the tz_convert in YahooFinanceDataFeed.get_latest_candles),
+        so a naive local `now` would misjudge completeness anywhere the
+        host isn't on UTC.
+        """
+        if df.empty or not isinstance(df.index, pd.DatetimeIndex):
+            return df
+
+        now = datetime.now(timezone.utc).replace(tzinfo=None)
+        duration = timedelta(minutes=self.get_timeframe_minutes())
+
+        return df[df.index + duration <= now]
+
     def get_timeframe_minutes(self) -> int:
         """Get timeframe in minutes."""
         tf_map = {
@@ -278,6 +305,10 @@ class YahooFinanceDataFeed(RealtimeDataFeed):
         # Standardize columns
         df.columns = [col.lower() for col in df.columns]
         df = df[['open', 'high', 'low', 'close', 'volume']].copy()
+
+        # Drop the still-forming bar before trimming, so the caller gets
+        # `count` *closed* candles rather than count-1 plus a partial one.
+        df = self._drop_incomplete_candle(df)
 
         # Return last N candles
         return df.tail(count)
