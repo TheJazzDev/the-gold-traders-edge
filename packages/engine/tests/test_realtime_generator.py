@@ -111,6 +111,98 @@ class TestValidateHandlesNaiveTimestamps:
         assert validator.validate(signal, current_price=2000.0, symbol='XAUUSD', timeframe='1h') is None
 
 
+class TestSignalAgeIsMeasuredFromCandleClose:
+    """
+    Regression coverage for the 2026-09-11 silent-outage: every signal on
+    every symbol was rejected for ~8 days with nothing in the logs.
+
+    `signal.time` is the candle's OPEN timestamp — a 1h bar stamped 07:00
+    does not close until 08:00 — and the worker wakes ~11s after the close
+    (prod logs: `08:00:11 - Candle close at 2026-09-11 07:00:00`). The age
+    gate measured `now - signal.time` against `< 1.0h`, so a correctly
+    closed 1h candle scored 1.0031h and was ALWAYS rejected. The gate was
+    mathematically unsatisfiable for a correctly-closed 1h candle.
+
+    It only ever passed because the Yahoo feed used to serve the
+    still-forming bar, whose open timestamp was the current hour (age
+    ~seconds). Commit aeccb60 fixed that feed bug, and in doing so removed
+    the only condition under which this gate could be satisfied — all three
+    live workers went silent at that deploy (123/126/125 candles processed,
+    0 signals). Verified by replaying the real pipeline over live data:
+    127 signals triggered, 127 rejected, every one at age=1.0031h.
+
+    Rejection is logger.debug and prod log_level is INFO, so it was silent.
+
+    Fix: measure age from the candle's CLOSE (open + timeframe duration),
+    which is the instant the signal actually becomes actionable.
+    """
+
+    def _signal(self, time):
+        return StrategySignal(
+            time=time, direction=TradeDirection.LONG,
+            entry_price=2000.0, stop_loss=1990.0, take_profit=2020.0,
+            confidence=0.6, signal_name='test',
+        )
+
+    def test_just_closed_1h_candle_is_accepted(self):
+        """The exact production case: 07:00 bar, evaluated at 08:00:11."""
+        validator = SignalValidator(min_rr_ratio=1.5)
+        now = pd.Timestamp.now(tz='UTC').tz_localize(None)
+        candle_open = now - pd.Timedelta(hours=1) - pd.Timedelta(seconds=11)
+
+        validated = validator.validate(
+            self._signal(candle_open), current_price=2000.0,
+            symbol='XAUUSD', timeframe='1h',
+        )
+
+        assert validated is not None, (
+            "a 1h candle that closed 11 seconds ago was rejected as stale — "
+            "the age gate is measuring from the candle's open, which is "
+            "always >= 1h in the past for a closed 1h bar"
+        )
+
+    def test_just_closed_4h_candle_is_accepted(self):
+        """The same arithmetic must hold for a longer timeframe, where
+        measuring from the open is off by four hours rather than one."""
+        validator = SignalValidator(min_rr_ratio=1.5)
+        now = pd.Timestamp.now(tz='UTC').tz_localize(None)
+        candle_open = now - pd.Timedelta(hours=4) - pd.Timedelta(seconds=11)
+
+        validated = validator.validate(
+            self._signal(candle_open), current_price=2000.0,
+            symbol='XAUUSD', timeframe='4h',
+        )
+
+        assert validated is not None
+
+    def test_timeframe_case_does_not_matter(self):
+        """`1H` and `1h` both reach this code path in production."""
+        validator = SignalValidator(min_rr_ratio=1.5)
+        now = pd.Timestamp.now(tz='UTC').tz_localize(None)
+        candle_open = now - pd.Timedelta(hours=1) - pd.Timedelta(seconds=11)
+
+        validated = validator.validate(
+            self._signal(candle_open), current_price=2000.0,
+            symbol='XAUUSD', timeframe='1H',
+        )
+
+        assert validated is not None
+
+    def test_genuinely_stale_candle_is_still_rejected(self):
+        """The gate's real purpose — stopping a restart from replaying
+        historical candles as live notifications — must survive the fix."""
+        validator = SignalValidator(min_rr_ratio=1.5)
+        now = pd.Timestamp.now(tz='UTC').tz_localize(None)
+        candle_open = now - pd.Timedelta(hours=8)
+
+        validated = validator.validate(
+            self._signal(candle_open), current_price=2000.0,
+            symbol='XAUUSD', timeframe='1h',
+        )
+
+        assert validated is None
+
+
 class TestMeetsMinRr:
     """Regression coverage for the fix: reward/risk for an RR-configured
     trade often lands a few ULPs below the intended ratio due to

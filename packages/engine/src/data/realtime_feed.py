@@ -27,6 +27,21 @@ class DataFeedType(Enum):
     META_API = "metaapi"
 
 
+def timeframe_minutes(timeframe: str) -> int:
+    """Length of one candle of `timeframe`, in minutes.
+
+    Module-level rather than a method because SignalValidator needs the
+    same mapping to know when a candle actually closed, and it only ever
+    receives the timeframe as a string — it has no data feed to ask.
+    Keeping one table here stops the two from drifting apart.
+    """
+    tf_map = {
+        "1M": 1, "5M": 5, "15M": 15, "30M": 30,
+        "1H": 60, "4H": 240, "1D": 1440
+    }
+    return tf_map.get(timeframe.upper(), 240)
+
+
 class RealtimeDataFeed(ABC):
     """
     Abstract base class for real-time data feeds.
@@ -181,11 +196,7 @@ class RealtimeDataFeed(ABC):
 
     def get_timeframe_minutes(self) -> int:
         """Get timeframe in minutes."""
-        tf_map = {
-            "1M": 1, "5M": 5, "15M": 15, "30M": 30,
-            "1H": 60, "4H": 240, "1D": 1440
-        }
-        return tf_map.get(self.timeframe.upper(), 240)
+        return timeframe_minutes(self.timeframe)
 
 
 class YahooFinanceDataFeed(RealtimeDataFeed):

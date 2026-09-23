@@ -23,7 +23,7 @@ from dataclasses import dataclass, asdict
 # Add project root to path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from data.realtime_feed import RealtimeDataFeed, create_datafeed
+from data.realtime_feed import RealtimeDataFeed, create_datafeed, timeframe_minutes
 from signals.gold_strategy import GoldStrategy
 from signals.outcome_tracker import SignalOutcomeTracker
 from backtesting.engine import Signal as StrategySignal, TradeDirection
@@ -245,16 +245,29 @@ class SignalValidator:
             )
             return None
 
-        # Check if signal is recent (within last hour)
-        # REJECT old/historical signals to prevent startup signal replay
-        signal_age_hours = (_utcnow_naive() - _to_naive_utc(signal.time)).total_seconds() / 3600
-        is_recent_signal = signal_age_hours < 1.0  # Signal must be from last hour
+        # Check the signal is from the candle that just closed.
+        # REJECT old/historical signals to prevent startup signal replay.
+        #
+        # Measured from the candle's CLOSE, not its open. `signal.time` is
+        # the open timestamp — a 1h bar stamped 07:00 does not close until
+        # 08:00 — and the worker wakes ~11s later, so measuring from the
+        # open scored every correctly-closed 1h candle at 1.0031h against a
+        # `< 1.0` limit and rejected it. That made the gate unsatisfiable
+        # for a closed 1h candle; it only ever passed while the Yahoo feed
+        # still served the forming bar (whose open IS the current hour), and
+        # all three live workers went silent the moment that feed bug was
+        # fixed in aeccb60. See TestSignalAgeIsMeasuredFromCandleClose.
+        candle_close = _to_naive_utc(signal.time) + pd.Timedelta(
+            minutes=timeframe_minutes(timeframe)
+        )
+        signal_age_hours = (_utcnow_naive() - candle_close).total_seconds() / 3600
+        is_recent_signal = signal_age_hours < 1.0  # must be the just-closed candle
 
         # REJECT old signals (prevents historical candles from triggering notifications on startup)
         if not is_recent_signal:
-            logger.debug(
+            logger.info(
                 f"Skipping old signal: {direction_str} @ ${signal.entry_price:.2f} "
-                f"(age: {signal_age_hours:.1f}h, max: 1h)"
+                f"({signal_age_hours:.2f}h after the {timeframe} candle closed, max: 1h)"
             )
             return None
 
