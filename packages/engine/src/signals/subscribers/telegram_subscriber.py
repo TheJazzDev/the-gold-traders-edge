@@ -27,6 +27,11 @@ except ImportError:
     print("❌ Error: 'requests' library not found. Install with: pip install requests")
     requests = None
 
+from signals.subscribers.telegram_messages import (
+    format_close_message,
+    format_signal_message,
+)
+
 logger = logging.getLogger(__name__)
 
 
@@ -213,80 +218,21 @@ class TelegramSubscriber:
             logger.debug("notify_on_trade_close disabled - skipping close notification")
             return False
 
-        label = reference_id or "this signal"
-
-        if outcome == "closed_tp":
-            headline = f"✅ <b>TAKE PROFIT HIT</b> — {label}"
-        elif outcome == "closed_sl":
-            headline = f"❌ <b>STOP LOSS HIT</b> — {label}"
-        else:
-            headline = f"⌛ <b>EXPIRED (no resolution)</b> — {label}"
-
-        result_line = f"Result: {r_multiple:+.2f}R" if r_multiple is not None else ""
-        exit_line = f"├ Exit: ${exit_price:.2f}\n" if exit_price is not None else ""
-
-        message = f"""
-{headline}
-
-<b>Symbol:</b> {symbol} {direction}
-<b>Strategy:</b> {strategy_name}
-
-├ Entry: ${entry_price:.2f}
-{exit_line}{result_line}
-""".strip()
+        message = format_close_message(
+            reference_id=reference_id,
+            symbol=symbol,
+            direction=direction,
+            strategy_name=strategy_name,
+            entry_price=entry_price,
+            exit_price=exit_price,
+            outcome=outcome,
+            r_multiple=r_multiple,
+        )
 
         return self.send_custom_message(message)
 
     def _format_signal_message(self, signal) -> str:
-        """
-        Format signal as a pretty Telegram message with HTML formatting.
-
-        Args:
-            signal: ValidatedSignal instance
-
-        Returns:
-            Formatted message string
-        """
-        # Direction emoji
-        direction_emoji = "🟢" if signal.direction == "LONG" else "🔴"
-        arrow = "📈" if signal.direction == "LONG" else "📉"
-
-        # Confidence indicator
-        confidence_stars = "⭐" * int(signal.confidence * 5)
-
-        # Calculate pip values
-        risk_pips = abs(signal.entry_price - signal.stop_loss) / 0.1
-        reward_pips = abs(signal.take_profit - signal.entry_price) / 0.1
-
-        # Format timestamp
-        time_str = signal.timestamp.strftime("%Y-%m-%d %H:%M UTC")
-
-        id_line = f"<b>ID:</b> {signal.reference_id}\n" if getattr(signal, 'reference_id', None) else ""
-
-        # Build message
-        message = f"""
-{direction_emoji} <b>NEW {signal.direction} SIGNAL</b> {arrow}
-
-{id_line}<b>Symbol:</b> {signal.symbol}
-<b>Strategy:</b> {signal.strategy_name}
-<b>Timeframe:</b> {signal.timeframe}
-<b>Time:</b> {time_str}
-
-💰 <b>TRADE DETAILS</b>
-├ Entry: ${signal.entry_price:.2f}
-├ Stop Loss: ${signal.stop_loss:.2f}
-├ Take Profit: ${signal.take_profit:.2f}
-
-📊 <b>RISK MANAGEMENT</b>
-├ Risk: {risk_pips:.1f} pips
-├ Reward: {reward_pips:.1f} pips
-├ R:R Ratio: 1:{signal.risk_reward_ratio:.2f}
-├ Confidence: {signal.confidence:.0%} {confidence_stars}
-
-{signal.notes if signal.notes else ""}
-""".strip()
-
-        return message
+        return format_signal_message(signal)
 
     def send_custom_message(self, message: str) -> bool:
         """

@@ -8,6 +8,8 @@ from sqlalchemy.sql import func
 from datetime import datetime
 import enum
 
+from instruments import price_to_pips
+
 Base = declarative_base()
 
 
@@ -104,11 +106,13 @@ class Signal(Base):
     def calculate_risk_reward(self):
         """Calculate and set risk/reward metrics."""
         if self.direction == SignalDirection.LONG:
-            self.risk_pips = (self.entry_price - self.stop_loss) * 10
-            self.reward_pips = (self.take_profit - self.entry_price) * 10
+            risk = self.entry_price - self.stop_loss
+            reward = self.take_profit - self.entry_price
         else:
-            self.risk_pips = (self.stop_loss - self.entry_price) * 10
-            self.reward_pips = (self.entry_price - self.take_profit) * 10
+            risk = self.stop_loss - self.entry_price
+            reward = self.entry_price - self.take_profit
+        self.risk_pips = price_to_pips(self.symbol, risk)
+        self.reward_pips = price_to_pips(self.symbol, reward)
 
         if self.risk_pips > 0:
             self.risk_reward_ratio = self.reward_pips / self.risk_pips

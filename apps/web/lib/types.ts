@@ -87,6 +87,7 @@ export interface RulePerformance {
 
 export interface Trade {
   id: number;
+  symbol: string;
   signal_name: string;
   direction: SignalDirection;
   entry_time: string;

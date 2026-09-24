@@ -27,6 +27,7 @@ from data.realtime_feed import RealtimeDataFeed, create_datafeed, timeframe_minu
 from signals.gold_strategy import GoldStrategy
 from signals.outcome_tracker import SignalOutcomeTracker
 from backtesting.engine import Signal as StrategySignal, TradeDirection
+from instruments import price_to_pips
 
 
 # Configure logging
@@ -165,21 +166,24 @@ class SignalValidator:
         return rr_ratio >= min_rr_ratio - cls.RR_TOLERANCE
 
     @staticmethod
-    def compute_risk_reward(signal: StrategySignal) -> Optional[tuple]:
+    def compute_risk_reward(signal: StrategySignal, symbol: str = "XAUUSD") -> Optional[tuple]:
         """
         Pure risk/reward calculation, shared with the tuning/backtesting
         pipeline (tune_strategy.py) so it scores the same trade population
         this validator would actually let through to production.
 
         Returns (risk_pips, reward_pips, rr_ratio), or None if the stop loss
-        or take profit sits on the wrong side of entry.
+        or take profit sits on the wrong side of entry. `symbol` only scales
+        the pip figures; the ratio (all the tuners use) is symbol-independent.
         """
         if signal.direction == TradeDirection.LONG:
-            risk_pips = (signal.entry_price - signal.stop_loss) * 10
-            reward_pips = (signal.take_profit - signal.entry_price) * 10
+            risk = signal.entry_price - signal.stop_loss
+            reward = signal.take_profit - signal.entry_price
         else:
-            risk_pips = (signal.stop_loss - signal.entry_price) * 10
-            reward_pips = (signal.entry_price - signal.take_profit) * 10
+            risk = signal.stop_loss - signal.entry_price
+            reward = signal.entry_price - signal.take_profit
+        risk_pips = price_to_pips(symbol, risk)
+        reward_pips = price_to_pips(symbol, reward)
 
         if risk_pips <= 0 or reward_pips <= 0:
             return None
@@ -219,7 +223,7 @@ class SignalValidator:
         # Calculate risk metrics
         direction_str = "LONG" if signal.direction == TradeDirection.LONG else "SHORT"
 
-        risk_reward = self.compute_risk_reward(signal)
+        risk_reward = self.compute_risk_reward(signal, symbol)
         if risk_reward is None:
             logger.warning(
                 f"Invalid risk/reward: stop loss or take profit on the wrong "

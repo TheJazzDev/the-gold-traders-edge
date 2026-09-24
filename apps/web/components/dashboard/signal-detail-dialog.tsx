@@ -6,7 +6,7 @@ import { Target, Shield, ArrowUpRight, Clock, Hash } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
 import { apiClient } from "@/lib/api/client";
-import { formatR, parseApiDate } from "@/lib/utils";
+import { formatPrice, formatR, parseApiDate } from "@/lib/utils";
 import type { SignalDetail } from "@/lib/types";
 
 interface SignalDetailDialogProps {
@@ -88,21 +88,21 @@ export function SignalDetailDialog({ signalId, onOpenChange }: SignalDetailDialo
                   <Target className="w-3 h-3 text-blue-400 shrink-0" />
                   <span className="text-[10px] sm:text-xs text-gray-400">Entry</span>
                 </div>
-                <p className="text-sm sm:text-lg font-bold text-white">${signal.entry_price.toFixed(2)}</p>
+                <p className="text-sm sm:text-lg font-bold text-white">{formatPrice(signal.symbol, signal.entry_price)}</p>
               </div>
               <div>
                 <div className="flex items-center gap-1 mb-1">
                   <Shield className="w-3 h-3 text-red-400 shrink-0" />
                   <span className="text-[10px] sm:text-xs text-gray-400">Stop Loss</span>
                 </div>
-                <p className="text-sm sm:text-lg font-bold text-red-400">${signal.stop_loss.toFixed(2)}</p>
+                <p className="text-sm sm:text-lg font-bold text-red-400">{formatPrice(signal.symbol, signal.stop_loss)}</p>
               </div>
               <div>
                 <div className="flex items-center gap-1 mb-1">
                   <ArrowUpRight className="w-3 h-3 text-green-400 shrink-0" />
                   <span className="text-[10px] sm:text-xs text-gray-400">Take Profit</span>
                 </div>
-                <p className="text-sm sm:text-lg font-bold text-green-400">${signal.take_profit.toFixed(2)}</p>
+                <p className="text-sm sm:text-lg font-bold text-green-400">{formatPrice(signal.symbol, signal.take_profit)}</p>
               </div>
             </div>
 
@@ -130,7 +130,7 @@ export function SignalDetailDialog({ signalId, onOpenChange }: SignalDetailDialo
                   <div>
                     <span className="text-gray-400 block">Exit price</span>
                     <span className="font-semibold text-white">
-                      {signal.actual_exit != null ? `$${signal.actual_exit.toFixed(2)}` : "—"}
+                      {signal.actual_exit != null ? formatPrice(signal.symbol, signal.actual_exit) : "—"}
                     </span>
                   </div>
                   <div>

@@ -7,6 +7,8 @@ from sqlalchemy import desc, and_
 from typing import List, Optional
 from datetime import datetime, timedelta
 
+from instruments import price_to_pips
+
 from .models import Signal, SignalStatus, SignalDirection
 
 
@@ -184,10 +186,10 @@ class SignalRepository:
             signal.pnl_pct = (pnl / signal.actual_entry) * 100
 
         # Calculate P&L in pips
-        if signal.direction == SignalDirection.LONG:
-            signal.pnl_pips = (exit_price - signal.actual_entry) * 10
-        else:
-            signal.pnl_pips = (signal.actual_entry - exit_price) * 10
+        move = exit_price - signal.actual_entry
+        if signal.direction != SignalDirection.LONG:
+            move = -move
+        signal.pnl_pips = price_to_pips(signal.symbol, move)
 
         return self.update(signal)
 
@@ -224,10 +226,10 @@ class SignalRepository:
         signal.closed_at = closed_at
 
         if exit_price is not None:
-            if signal.direction == SignalDirection.LONG:
-                signal.pnl_pips = (exit_price - signal.entry_price) * 10
-            else:
-                signal.pnl_pips = (signal.entry_price - exit_price) * 10
+            move = exit_price - signal.entry_price
+            if signal.direction != SignalDirection.LONG:
+                move = -move
+            signal.pnl_pips = price_to_pips(signal.symbol, move)
 
         if note_suffix:
             signal.notes = (signal.notes or "") + note_suffix

@@ -16,7 +16,7 @@ import { Badge } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/switch";
 import { Slider } from "@/components/ui/slider";
 import { Label } from "@/components/ui/label";
-import { formatProfitFactor } from "@/lib/utils";
+import { formatPrice, formatProfitFactor } from "@/lib/utils";
 import { Server, Zap, Shield, CheckCircle2, XCircle, Play, Square } from "lucide-react";
 import type { Setting, StrategyPerformance } from "@/lib/types";
 
@@ -328,7 +328,7 @@ export default function ControlsPage() {
                         <p className="text-xs text-gray-400 truncate">{signal.strategy_name}</p>
                       </div>
                     </div>
-                    <p className="text-sm font-bold text-white shrink-0">${signal.entry_price.toFixed(2)}</p>
+                    <p className="text-sm font-bold text-white shrink-0">{formatPrice(signal.symbol, signal.entry_price)}</p>
                   </div>
                 ))}
               </div>

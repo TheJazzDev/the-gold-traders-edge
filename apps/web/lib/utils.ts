@@ -28,3 +28,10 @@ export function parseApiDate(value: string): Date {
   const hasTimezone = /Z$|[+-]\d{2}:\d{2}$/.test(value);
   return new Date(hasTimezone ? value : `${value}Z`);
 }
+
+/** Forex majors quote to 5 decimals; gold to 2. Rendering EURUSD with
+ * toFixed(2) showed entry and stop loss as the same "$1.14". */
+export function formatPrice(symbol: string, value: number): string {
+  const decimals = symbol.toUpperCase() === 'XAUUSD' ? 2 : 5;
+  return value.toFixed(decimals);
+}

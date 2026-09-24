@@ -26,7 +26,7 @@ import { MarketStatus } from "@/components/market/MarketStatus";
 import { SignalDetailDialog } from "@/components/dashboard/signal-detail-dialog";
 import { useSignals } from "@/lib/hooks/useSignals";
 import { apiClient } from "@/lib/api/client";
-import { formatR, formatProfitFactor } from "@/lib/utils";
+import { formatPrice, formatR, formatProfitFactor } from "@/lib/utils";
 import type { PerformanceStats, ServiceStatus, SignalStatus } from "@/lib/types";
 
 const STATUS_FILTERS: { value: SignalStatus | "all"; label: string }[] = [
@@ -255,21 +255,21 @@ export default function HomePage() {
                         <Target className="w-3 h-3 text-blue-400 shrink-0" />
                         <span className="text-[10px] sm:text-xs text-gray-400">Entry</span>
                       </div>
-                      <p className="text-sm sm:text-lg font-bold text-white">${signal.entry_price.toFixed(2)}</p>
+                      <p className="text-sm sm:text-lg font-bold text-white">{formatPrice(signal.symbol, signal.entry_price)}</p>
                     </div>
                     <div>
                       <div className="flex items-center gap-1 mb-1">
                         <Shield className="w-3 h-3 text-red-400 shrink-0" />
                         <span className="text-[10px] sm:text-xs text-gray-400">Stop Loss</span>
                       </div>
-                      <p className="text-sm sm:text-lg font-bold text-red-400">${signal.stop_loss.toFixed(2)}</p>
+                      <p className="text-sm sm:text-lg font-bold text-red-400">{formatPrice(signal.symbol, signal.stop_loss)}</p>
                     </div>
                     <div>
                       <div className="flex items-center gap-1 mb-1">
                         <ArrowUpRight className="w-3 h-3 text-green-400 shrink-0" />
                         <span className="text-[10px] sm:text-xs text-gray-400">Take Profit</span>
                       </div>
-                      <p className="text-sm sm:text-lg font-bold text-green-400">${signal.take_profit.toFixed(2)}</p>
+                      <p className="text-sm sm:text-lg font-bold text-green-400">{formatPrice(signal.symbol, signal.take_profit)}</p>
                     </div>
                   </div>
 

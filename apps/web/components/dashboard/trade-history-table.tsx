@@ -2,7 +2,7 @@
 
 import type { Trade } from "@/lib/types";
 import { ArrowUpRight, ArrowDownRight } from "lucide-react";
-import { formatR } from "@/lib/utils";
+import { formatPrice, formatR } from "@/lib/utils";
 
 interface TradeHistoryTableProps {
   data: Trade[];
@@ -70,7 +70,7 @@ export function TradeHistoryTable({ data, loading }: TradeHistoryTableProps) {
               <DirectionBadge direction={trade.direction} />
             </div>
             <div className="grid grid-cols-2 gap-x-3 gap-y-1 text-xs text-white/70">
-              <span>Entry: {trade.entry_price.toFixed(2)}</span>
+              <span>Entry: {formatPrice(trade.symbol, trade.entry_price)}</span>
               <span>Exit: {trade.exit_price?.toFixed(2) ?? "-"}</span>
               <span>{formatDate(trade.entry_time)}</span>
               <span>{formatDate(trade.exit_time)}</span>
@@ -107,7 +107,7 @@ export function TradeHistoryTable({ data, loading }: TradeHistoryTableProps) {
                   <DirectionBadge direction={trade.direction} />
                 </td>
                 <td className="py-3 px-3 text-white/60 text-xs">
-                  {trade.entry_price.toFixed(2)}
+                  {formatPrice(trade.symbol, trade.entry_price)}
                   <br />
                   {formatDate(trade.entry_time)}
                 </td>
