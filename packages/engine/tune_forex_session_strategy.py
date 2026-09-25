@@ -28,11 +28,14 @@ from datetime import datetime, timezone
 sys.path.insert(0, str(Path(__file__).parent / 'src'))
 
 from data.loader import GoldDataLoader
-from signals.forex_session_strategy import ForexSessionStrategy, create_strategy_function
-from signals.realtime_generator import SignalValidator
-from backtesting.engine import BacktestEngine, TradeStatus
+from signals.forex_session_strategy import ForexSessionStrategy
+from analysis.trend_gate import warmup_candles
+from backtesting.engine import BacktestEngine
+from backtesting.live_parity import (
+    PRODUCTION_MIN_CONFIDENCE, PRODUCTION_MIN_RR, live_gated_strategy_func,
+    resolved_stats, run_on_window,
+)
 
-PRODUCTION_MIN_RR = 1.5
 MIN_TRAIN_TRADES = 15
 MIN_TEST_TRADES = 5
 
@@ -42,44 +45,24 @@ def split_train_test(df, train_frac=0.7):
     return df.iloc[:split_idx], df.iloc[split_idx:]
 
 
-def _production_valid_strategy_func(strategy):
-    """Matches tune_strategy.py's own gate — only score trades production
-    would actually publish (risk>0, reward>0, rr >= PRODUCTION_MIN_RR)."""
-    def strategy_func(df, idx):
-        signal = strategy.evaluate(df, idx)
-        if signal is None:
-            return None
-        risk_reward = SignalValidator.compute_risk_reward(signal)
-        if risk_reward is None or not SignalValidator.meets_min_rr(risk_reward[2], PRODUCTION_MIN_RR):
-            return None
-        return signal
-    return strategy_func
+def slice_warmup_candles(config):
+    """History before the test slice — the strategy's own gate, plus the
+    trend gate's EMA window when it's on (live fetches the same)."""
+    needed = config['lookback_candles'] + config['atr_period']
+    if config.get('htf_trend_filter'):
+        needed = max(needed, warmup_candles(config['trend_ema_period']))
+    return needed + 50
 
 
-def resolved_stats(result):
-    """Computed over resolved (CLOSED_TP/CLOSED_SL) trades only — excludes
-    CLOSED_MANUAL force-closes, matching tune_strategy.py's own reasoning."""
-    resolved = [t for t in result.trades if t.status in (TradeStatus.CLOSED_TP, TradeStatus.CLOSED_SL)]
-    total_trades = len(resolved)
-    if total_trades == 0:
-        return {'profit_factor': 0.0, 'total_trades': 0, 'win_rate': 0.0, 'net_profit_pct': 0.0}
-    winning = [t for t in resolved if t.pnl > 0]
-    losing = [t for t in resolved if t.pnl <= 0]
-    total_profit = sum(t.pnl for t in winning) if winning else 0
-    total_loss = abs(sum(t.pnl for t in losing)) if losing else 0
-    return {
-        'profit_factor': total_profit / total_loss if total_loss > 0 else float('inf'),
-        'total_trades': total_trades,
-        'win_rate': len(winning) / total_trades * 100,
-        'net_profit_pct': sum(t.pnl for t in resolved) / result.initial_balance * 100,
-    }
-
-
-def run_backtest(df, config):
-    strategy = ForexSessionStrategy(config=config)
-    strategy_func = _production_valid_strategy_func(strategy)
-    engine = BacktestEngine(initial_balance=10000, position_size_pct=2.0)
-    result = engine.run(df, strategy_func, max_open_trades=1)
+def run_backtest(df, config, start=None):
+    """Score only the trades live would publish (backtesting/live_parity.py).
+    With `start`, earlier candles of `df` are warm-up history only."""
+    strategy_func = live_gated_strategy_func(ForexSessionStrategy(config=config))
+    if start is None:
+        engine = BacktestEngine(initial_balance=10000, position_size_pct=2.0)
+        result = engine.run(df, strategy_func, max_open_trades=1)
+    else:
+        result = run_on_window(df, start, strategy_func, warmup=slice_warmup_candles(config))
     return resolved_stats(result)
 
 
@@ -93,6 +76,8 @@ def main():
     parser.add_argument('--symbol', type=str, required=True, help='e.g. GBPUSD')
     parser.add_argument('--output', type=str, default=None)
     parser.add_argument('--train-frac', type=float, default=0.7)
+    parser.add_argument('--htf-trend-filter', action='store_true',
+                        help='Validate (and write) the config with the HTF trend gate on')
     args = parser.parse_args()
 
     output_path = args.output or str(
@@ -106,9 +91,9 @@ def main():
     print(f"Train: {len(train_df)} candles ({train_df.index[0]} to {train_df.index[-1]})")
     print(f"Test:  {len(test_df)} candles ({test_df.index[0]} to {test_df.index[-1]})")
 
-    config = dict(ForexSessionStrategy.DEFAULT_CONFIG)
+    config = {**ForexSessionStrategy.DEFAULT_CONFIG, 'htf_trend_filter': args.htf_trend_filter}
     train_stats = run_backtest(train_df, config)
-    test_stats = run_backtest(test_df, config)
+    test_stats = run_backtest(df, config, start=test_df.index[0])
 
     passed_train = passes_pf_gate(train_stats, MIN_TRAIN_TRADES)
     passed_test = passes_pf_gate(test_stats, MIN_TEST_TRADES)
@@ -129,6 +114,12 @@ def main():
             'train_end': str(train_df.index[-1]),
         },
         'config': config,
+        'live_gates': {
+            'min_rr_ratio': PRODUCTION_MIN_RR,
+            'min_confidence': PRODUCTION_MIN_CONFIDENCE,
+            'max_open_trades': 1,
+            'test_slice_warmup': 'strategy sees prior candles as history; trades only from train_end onward',
+        },
         'enabled': passed_train and passed_test,
         'train': train_stats,
         'test': test_stats,

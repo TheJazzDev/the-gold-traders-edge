@@ -12,6 +12,8 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from analysis.technical import TechnicalAnalysis, TrendDirection
 from backtesting.engine import Signal, TradeDirection
+from signals.order_block_zones import detect_order_block
+from analysis.trend_gate import ema_trend, trend_allows
 
 
 from dataclasses import dataclass
@@ -55,6 +57,20 @@ class GoldStrategy:
         # Risk management
         'default_rr_ratio': 2.0,
         'sl_buffer_atr': 0.3,
+
+        # After an order-block zone stops out, skip any overlapping zone of
+        # the same type for this many candles (B2, 2026-09-25 review). 20 =
+        # the order-block scan window, so in practice a failed level stays
+        # off-limits until a new, non-overlapping block forms. 0 disables.
+        'reentry_cooldown_candles': 20,
+
+        # Higher-timeframe trend gate (B3): when on, only trade in the
+        # direction of the 1H EMA trend — a hard filter, not a confidence
+        # bonus. Off by default; switched on only via the tuned config, and
+        # only if it passes the held-out test (see analysis/trend_gate.py).
+        'htf_trend_filter': False,
+        'trend_ema_period': 200,
+        'trend_slope_candles': 24,
     }
 
     def __init__(self, config: Optional[Dict] = None, enabled_rules: Optional[List[int]] = None):
@@ -183,49 +199,14 @@ class GoldStrategy:
         return None
 
     def _detect_order_block(self, df: pd.DataFrame, idx: int, lookback: int = 20) -> Optional[Dict]:
-        """Detect order blocks (institutional entry zones)."""
-        if idx < lookback + 5:
-            return None
-
-        # Look for strong momentum candles followed by reversal
-        for i in range(idx - lookback, idx - 3):
-            candle = df.iloc[i]
-            body = abs(candle['close'] - candle['open'])
-            candle_range = candle['high'] - candle['low']
-
-            if candle_range == 0:
-                continue
-
-            # Strong bullish candle
-            if candle['close'] > candle['open'] and body > candle_range * 0.6:
-                # Check if price came back to this zone
-                ob_high = candle['high']
-                ob_low = candle['open']  # Use open as bottom of order block
-
-                current = df.iloc[idx]
-                if ob_low <= current['low'] <= ob_high:
-                    return {
-                        'type': 'bullish',
-                        'high': ob_high,
-                        'low': ob_low,
-                        'index': i
-                    }
-
-            # Strong bearish candle
-            if candle['close'] < candle['open'] and body > candle_range * 0.6:
-                ob_high = candle['open']
-                ob_low = candle['low']
-
-                current = df.iloc[idx]
-                if ob_low <= current['high'] <= ob_high:
-                    return {
-                        'type': 'bearish',
-                        'high': ob_high,
-                        'low': ob_low,
-                        'index': i
-                    }
-
-        return None
+        """Detect order blocks (institutional entry zones), skipping zones
+        still in their post-stop-out cooldown — see signals/order_block_zones.py."""
+        atr = self.ta.calculate_atr(period=self.config['atr_period']).to_numpy() if self.ta is not None else None
+        return detect_order_block(
+            df, idx, lookback=lookback, atr=atr,
+            sl_buffer_atr=self.config['sl_buffer_atr'],
+            reentry_cooldown_candles=self.config['reentry_cooldown_candles'],
+        )
 
     # ==================== TRADING RULES ====================
 
@@ -267,7 +248,21 @@ class GoldStrategy:
             risk = stop_loss - entry_price
             take_profit = entry_price - (risk * self.config['default_rr_ratio'])
 
-        trend = self.ta.detect_trend(lookback=30)
+        if self.config['htf_trend_filter']:
+            htf_trend = ema_trend(
+                df['close'].iloc[:idx + 1],
+                ema_period=self.config['trend_ema_period'],
+                slope_candles=self.config['trend_slope_candles'],
+            )
+            if not trend_allows(direction, htf_trend):
+                return result
+
+        # Confidence bonus: the last two swing highs/lows anywhere in the
+        # frame, which is what live ran (and what was validated) before
+        # detect_trend started honouring its lookback. A literal 30-candle
+        # window cut test-slice PF from 1.57 to 1.37 — see the 2026-09-25
+        # entry in docs/superpowers/specs/strategy-ledger.md.
+        trend = self.ta.detect_trend(lookback=len(self.ta.df))
 
         confidence = 0.55
         if (ob['type'] == 'bullish' and trend == TrendDirection.UPTREND) or \

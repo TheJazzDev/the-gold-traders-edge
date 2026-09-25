@@ -93,12 +93,17 @@ class TechnicalAnalysis:
         Returns:
             List of SwingPoint objects
         """
+        return self._find_swing_points(self.df, lookback, min_strength)
+
+    @staticmethod
+    def _find_swing_points(df: pd.DataFrame, lookback: int, min_strength: int) -> List[SwingPoint]:
+        """Swing-point scan over an arbitrary frame (see detect_swing_points)."""
         swing_points = []
-        highs = self.df['high'].values
-        lows = self.df['low'].values
-        indices = self.df.index
-        
-        for i in range(lookback, len(self.df) - lookback):
+        highs = df['high'].values
+        lows = df['low'].values
+        indices = df.index
+
+        for i in range(lookback, len(df) - lookback):
             # Check for swing high
             is_swing_high = True
             strength = 0
@@ -260,8 +265,10 @@ class TechnicalAnalysis:
             raise ValueError(f"Unknown method: {method}")
     
     def _trend_by_swings(self, df: pd.DataFrame) -> TrendDirection:
-        """Detect trend by analyzing higher highs/lows or lower highs/lows."""
-        swing_points = self.detect_swing_points(lookback=3, min_strength=1)
+        """Detect trend by analyzing higher highs/lows or lower highs/lows
+        within `df` only — the detect_trend() lookback window, not the
+        whole history."""
+        swing_points = self._find_swing_points(df, lookback=3, min_strength=1)
         
         if len(swing_points) < 4:
             return TrendDirection.SIDEWAYS
