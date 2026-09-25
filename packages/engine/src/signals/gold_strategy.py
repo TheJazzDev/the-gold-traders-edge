@@ -13,6 +13,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 from analysis.technical import TechnicalAnalysis, TrendDirection
 from backtesting.engine import Signal, TradeDirection
 from signals.order_block_zones import detect_order_block
+from analysis.trend_gate import ema_trend, trend_allows
 
 
 from dataclasses import dataclass
@@ -62,6 +63,14 @@ class GoldStrategy:
         # the order-block scan window, so in practice a failed level stays
         # off-limits until a new, non-overlapping block forms. 0 disables.
         'reentry_cooldown_candles': 20,
+
+        # Higher-timeframe trend gate (B3): when on, only trade in the
+        # direction of the 1H EMA trend — a hard filter, not a confidence
+        # bonus. Off by default; switched on only via the tuned config, and
+        # only if it passes the held-out test (see analysis/trend_gate.py).
+        'htf_trend_filter': False,
+        'trend_ema_period': 200,
+        'trend_slope_candles': 24,
     }
 
     def __init__(self, config: Optional[Dict] = None, enabled_rules: Optional[List[int]] = None):
@@ -238,6 +247,15 @@ class GoldStrategy:
             stop_loss = ob['high'] + (atr * self.config['sl_buffer_atr'])
             risk = stop_loss - entry_price
             take_profit = entry_price - (risk * self.config['default_rr_ratio'])
+
+        if self.config['htf_trend_filter']:
+            htf_trend = ema_trend(
+                df['close'].iloc[:idx + 1],
+                ema_period=self.config['trend_ema_period'],
+                slope_candles=self.config['trend_slope_candles'],
+            )
+            if not trend_allows(direction, htf_trend):
+                return result
 
         trend = self.ta.detect_trend(lookback=30)
 
