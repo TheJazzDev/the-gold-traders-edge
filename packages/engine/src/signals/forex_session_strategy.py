@@ -23,6 +23,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from analysis.technical import TechnicalAnalysis
+from analysis.trend_gate import ema_trend, trend_allows
 from backtesting.engine import Signal, TradeDirection
 from signals.gold_strategy import RuleResult
 
@@ -64,6 +65,13 @@ class ForexSessionStrategy:
         'sl_buffer_atr': 0.3,
 
         'default_rr_ratio': 2.0,
+
+        # Optional higher-timeframe trend gate (B4): only take breakouts in
+        # the direction of the 1H EMA trend. Off by default — see
+        # analysis/trend_gate.py and the 2026-09-25 ledger entry.
+        'htf_trend_filter': False,
+        'trend_ema_period': 200,
+        'trend_slope_candles': 24,
     }
 
     def __init__(self, config: Optional[Dict] = None):
@@ -162,6 +170,15 @@ class ForexSessionStrategy:
 
         if risk <= 0:
             return result
+
+        if self.config['htf_trend_filter']:
+            htf_trend = ema_trend(
+                df['close'].iloc[:idx + 1],
+                ema_period=self.config['trend_ema_period'],
+                slope_candles=self.config['trend_slope_candles'],
+            )
+            if not trend_allows(direction, htf_trend):
+                return result
 
         result.triggered = True
         result.direction = direction
