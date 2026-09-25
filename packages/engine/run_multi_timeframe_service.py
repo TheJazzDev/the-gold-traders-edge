@@ -37,6 +37,7 @@ from signals.subscribers.telegram_subscriber import TelegramSubscriber
 from signals.subscribers.dedup_subscriber import DeduplicationSubscriber
 from signals.signal_deduplicator import get_deduplicator
 from signals.outcome_tracker import SignalOutcomeTracker
+from signals.open_signal_gate import make_open_signal_checker
 from trading.mt5_config import MT5Config
 from trading.mt5_connection import create_mt5_connection
 from trading.risk_manager import RiskManager
@@ -380,7 +381,10 @@ class TimeframeWorker:
                 lookback_periods=lookback_periods,
                 pre_run_hook=refresh_settings,
                 last_processed_candle_getter=get_last_processed_candle,
-                last_processed_candle_setter=save_last_processed_candle
+                last_processed_candle_setter=save_last_processed_candle,
+                # One open signal per symbol, as in the max_open_trades=1
+                # backtest — see signals/open_signal_gate.py.
+                open_signal_checker=make_open_signal_checker(self.database_url, self.spec.symbol),
             )
 
             # Add SHARED deduplication subscriber (same instance across ALL workers)

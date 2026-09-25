@@ -360,6 +360,7 @@ class RealtimeSignalGenerator:
         pre_run_hook: Optional[Callable[[], None]] = None,
         last_processed_candle_getter: Optional[Callable[[], Optional[datetime]]] = None,
         last_processed_candle_setter: Optional[Callable[[datetime], None]] = None,
+        open_signal_checker: Optional[Callable[[], bool]] = None,
     ):
         """
         Initialize signal generator.
@@ -385,6 +386,12 @@ class RealtimeSignalGenerator:
                 docs/superpowers/specs/strategy-ledger.md.
             last_processed_candle_setter: Optional callable invoked with the
                 latest candle's timestamp after it's actually processed.
+            open_signal_checker: Optional callable returning True while this
+                symbol already has an open signal. A validated signal is
+                then dropped instead of published, matching the
+                max_open_trades=1 backtest every rule was validated on (see
+                signals/open_signal_gate.py). Fails closed: if the check
+                raises, nothing is published.
         """
         self.data_feed = data_feed
         self.lookback_periods = lookback_periods
@@ -392,6 +399,7 @@ class RealtimeSignalGenerator:
         self.pre_run_hook = pre_run_hook
         self.last_processed_candle_getter = last_processed_candle_getter
         self.last_processed_candle_setter = last_processed_candle_setter
+        self.open_signal_checker = open_signal_checker
 
         # Initialize strategy. GoldStrategy's own default (order_block_retest
         # — the only validated rule, see strategy-ledger.md) already applies
@@ -479,10 +487,26 @@ class RealtimeSignalGenerator:
             timeframe=self.data_feed.timeframe
         )
 
+        if validated and self._symbol_has_open_signal():
+            return None
+
         if validated:
             self.total_signals_generated += 1
 
         return validated
+
+    def _symbol_has_open_signal(self) -> bool:
+        """True if a signal must be held back because one is already open."""
+        if self.open_signal_checker is None:
+            return False
+        try:
+            is_open = self.open_signal_checker()
+        except Exception:
+            logger.error("Open-signal check failed — not publishing", exc_info=True)
+            return True
+        if is_open:
+            logger.info(f"⏸️  Skipping signal: {self.data_feed.symbol} already has an open signal")
+        return is_open
 
     def run_once(self) -> Optional[ValidatedSignal]:
         """
