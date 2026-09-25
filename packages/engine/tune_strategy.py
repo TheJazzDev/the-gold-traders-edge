@@ -29,6 +29,12 @@ grid to the target timeframe's own candle duration:
 4. Computes an expiry window from the 95th percentile of trade durations
    (in hours) across all enabled rules' test-slice trades.
 
+Every backtest applies live's gates (backtesting/live_parity.py): R:R >= 1.5,
+confidence >= 0.60, one open trade, and the strategy's re-entry cooldown and
+(with --htf-trend-filter) trend gate. The test slice is scored with the
+preceding candles as warm-up history, as live always has, but no trade
+opens before it starts.
+
 Note: only 1h (byte-identical regression against the committed
 tuned_configs/1h.json) and 15m (a real tuning run) have actually been
 validated end-to-end. The other timeframes (5m, 30m, 4h, 1d) are supported
@@ -49,13 +55,17 @@ sys.path.insert(0, str(Path(__file__).parent / 'src'))
 
 from data.loader import GoldDataLoader
 from signals.gold_strategy import GoldStrategy
-from signals.realtime_generator import SignalValidator
+from analysis.trend_gate import warmup_candles
 from backtesting.engine import BacktestEngine, TradeStatus
+from backtesting.live_parity import (
+    PRODUCTION_MIN_CONFIDENCE, PRODUCTION_MIN_RR, live_gated_strategy_func,
+    resolved_stats, run_on_window,
+)
 
-# Matches SignalValidator(min_rr_ratio=1.5) in run_multi_timeframe_service.py.
-# Tuning must score the same trade population production would actually
-# publish, not whatever GoldStrategy raw-emits before that filter runs.
-PRODUCTION_MIN_RR = 1.5
+# Live-only gates that aren't tuned, but must be on in every backtest so the
+# tuner scores the trades live would publish (see backtesting/live_parity.py).
+# Written into the output config so live runs exactly what was validated.
+GATE_PARAMS = ['reentry_cooldown_candles', 'htf_trend_filter', 'trend_ema_period', 'trend_slope_candles']
 
 # Only order_block_retest survived shared-config, out-of-sample validation.
 # Every other rule tried (5 legacy + 3 new hypotheses from a later research
@@ -157,77 +167,57 @@ def split_train_test(df, train_frac=0.7):
     return df.iloc[:split_idx], df.iloc[split_idx:]
 
 
-def _production_valid_strategy_func(strategy):
-    """
-    Wraps GoldStrategy.evaluate so the backtest only ever sees signals
-    SignalValidator would actually publish to production (risk>0, reward>0,
-    rr >= PRODUCTION_MIN_RR). Without this, tuning selects rules and configs
-    against a trade population production can never place.
-    """
-    def strategy_func(df, idx):
-        signal = strategy.evaluate(df, idx)
-        if signal is None:
-            return None
-        risk_reward = SignalValidator.compute_risk_reward(signal)
-        if risk_reward is None or not SignalValidator.meets_min_rr(risk_reward[2], PRODUCTION_MIN_RR):
-            return None
-        return signal
-    return strategy_func
+# Kept under their old names for existing callers/tests; the logic lives in
+# backtesting/live_parity.py, shared with the forex tuner.
+_production_valid_strategy_func = live_gated_strategy_func
+_resolved_stats = resolved_stats
 
 
-def _resolved_stats(result):
-    """
-    profit_factor/total_trades/win_rate/net_profit_pct computed over
-    RESOLVED (CLOSED_TP/CLOSED_SL) trades only — excludes CLOSED_MANUAL
-    force-closes (an open position marked to market at the end of the data
-    slice). A single such trade at the tail of a slice can flip a rule's
-    PF gate from FAIL to PASS on an unresolved mark-to-market credit rather
-    than a real win; BacktestResult.calculate_metrics() doesn't make this
-    distinction, so it's recomputed here instead of trusting
-    result.profit_factor/result.total_trades directly.
-    """
-    resolved = [t for t in result.trades if t.status in (TradeStatus.CLOSED_TP, TradeStatus.CLOSED_SL)]
-    total_trades = len(resolved)
-    if total_trades == 0:
-        return {'profit_factor': 0.0, 'total_trades': 0, 'win_rate': 0.0, 'net_profit_pct': 0.0}
-
-    winning = [t for t in resolved if t.pnl > 0]
-    losing = [t for t in resolved if t.pnl <= 0]
-    total_profit = sum(t.pnl for t in winning) if winning else 0
-    total_loss = abs(sum(t.pnl for t in losing)) if losing else 0
-
-    return {
-        'profit_factor': total_profit / total_loss if total_loss > 0 else float('inf'),
-        'total_trades': total_trades,
-        'win_rate': len(winning) / total_trades * 100,
-        'net_profit_pct': sum(t.pnl for t in resolved) / result.initial_balance * 100,
-    }
+def gate_config(htf_trend_filter=False):
+    """The untuned live gates, from GoldStrategy's defaults plus CLI overrides."""
+    config = {param: GoldStrategy.DEFAULT_CONFIG[param] for param in GATE_PARAMS}
+    config['htf_trend_filter'] = htf_trend_filter
+    return config
 
 
-def run_isolated_backtest(df, rule_name, config):
+def slice_warmup_candles(config):
+    """History fed to the strategy before the test slice's first candle —
+    enough for the evaluate() gate and the trend gate's EMA, as live has."""
+    needed = max(config.get('trend_lookback', 0), 60)
+    if config.get('htf_trend_filter'):
+        needed = max(needed, warmup_candles(config['trend_ema_period']))
+    return needed + 50
+
+
+def run_isolated_backtest(df, rule_name, config, start=None):
     """Run a backtest with only `rule_name` enabled. Returns (profit_factor, total_trades, result),
-    computed over resolved trades only — see _resolved_stats."""
+    computed over resolved trades only — see _resolved_stats. With `start`, only trades from
+    `start` onward count, and earlier candles of `df` serve as warm-up history (see
+    slice_warmup_candles)."""
     strategy = GoldStrategy(config=config)
     for name in strategy.rules_enabled:
         strategy.rules_enabled[name] = False
     strategy.rules_enabled[rule_name] = True
 
     strategy_func = _production_valid_strategy_func(strategy)
-    engine = BacktestEngine(initial_balance=10000, position_size_pct=2.0)
-    result = engine.run(df, strategy_func, max_open_trades=1)
+    if start is None:
+        engine = BacktestEngine(initial_balance=10000, position_size_pct=2.0)
+        result = engine.run(df, strategy_func, max_open_trades=1)
+    else:
+        result = run_on_window(df, start, strategy_func, warmup=slice_warmup_candles(strategy.config))
     stats = _resolved_stats(result)
     return stats['profit_factor'], stats['total_trades'], result
 
 
-def run_combined_backtest(df, rule_names, config):
-    """Run a backtest with all of `rule_names` enabled together, one shared config."""
+def run_combined_backtest(df, rule_names, config, start):
+    """Run a backtest with all of `rule_names` enabled together, one shared config,
+    scoring trades from `start` onward (earlier candles are warm-up)."""
     strategy = GoldStrategy(config=config)
     for name in strategy.rules_enabled:
         strategy.rules_enabled[name] = name in rule_names
 
     strategy_func = _production_valid_strategy_func(strategy)
-    engine = BacktestEngine(initial_balance=10000, position_size_pct=2.0)
-    return engine.run(df, strategy_func, max_open_trades=1)
+    return run_on_window(df, start, strategy_func, warmup=slice_warmup_candles(strategy.config))
 
 
 def tune_rule(train_df, rule_name, base_config, search_grid):
@@ -253,12 +243,12 @@ def tune_rule(train_df, rule_name, base_config, search_grid):
     return current
 
 
-def validate_rule(df, rule_name, config):
+def validate_rule(df, rule_name, config, start=None):
     """Run `config` isolated to `rule_name` on `df`, returning (stats, trade_durations_hours).
     Both are computed over resolved (CLOSED_TP/CLOSED_SL) trades only — a force-closed trade's
     duration is truncated by the data slice ending, not by the trade actually resolving, so it
-    shouldn't calibrate the expiry window either."""
-    _, _, result = run_isolated_backtest(df, rule_name, config)
+    shouldn't calibrate the expiry window either. `start`: see run_isolated_backtest."""
+    _, _, result = run_isolated_backtest(df, rule_name, config, start=start)
     resolved = [t for t in result.trades if t.status in (TradeStatus.CLOSED_TP, TradeStatus.CLOSED_SL)]
     durations_hours = [
         (t.exit_time - t.entry_time).total_seconds() / 3600
@@ -311,6 +301,8 @@ def main():
     parser.add_argument('--output', type=str, default=None,
                          help='Output path (default: tuned_configs/<timeframe>.json)')
     parser.add_argument('--train-frac', type=float, default=0.7)
+    parser.add_argument('--htf-trend-filter', action='store_true',
+                        help='Validate (and write) the config with the HTF trend gate on')
     args = parser.parse_args()
 
     output_path_str = args.output or default_output_path(args.timeframe)
@@ -319,6 +311,9 @@ def main():
         GoldStrategy.DEFAULT_CONFIG, from_minutes=240, to_minutes=TIMEFRAME_MINUTES[args.timeframe]
     )
     search_grid = build_search_grid(base_config)
+    # Gates ride along untouched by the search (not in search_grid), so the
+    # per-parameter median below passes them through unchanged.
+    base_config = {**base_config, **gate_config(htf_trend_filter=args.htf_trend_filter)}
 
     loader = GoldDataLoader()
     df = loader.load_from_csv(args.data)
@@ -337,7 +332,7 @@ def main():
         tuned_config_by_rule[rule_name] = tuned_config
 
         train_stats, _ = validate_rule(train_df, rule_name, tuned_config)
-        individual_test_stats, _ = validate_rule(test_df, rule_name, tuned_config)
+        individual_test_stats, _ = validate_rule(df, rule_name, tuned_config, start=test_df.index[0])
 
         validation[rule_name] = {
             'train': train_stats,
@@ -378,7 +373,7 @@ def main():
     all_test_durations = []
     final_validation = {}
     for rule_name in candidate_rules:
-        stats, durations = validate_rule(test_df, rule_name, final_config)
+        stats, durations = validate_rule(df, rule_name, final_config, start=test_df.index[0])
         final_validation[rule_name] = stats
         passed = passes_pf_gate(stats, MIN_TEST_TRADES)
         print(f"  {rule_name}: PF={stats['profit_factor']:.2f} trades={stats['total_trades']} -> {'ENABLED' if passed else 'DISABLED'}")
@@ -388,7 +383,9 @@ def main():
 
     expiry_hours = max(1, int(percentile(all_test_durations, 95)) + 1) if all_test_durations else 48
 
-    combined_result = run_combined_backtest(test_df, enabled_rules, final_config) if enabled_rules else None
+    combined_result = (
+        run_combined_backtest(df, enabled_rules, final_config, start=test_df.index[0]) if enabled_rules else None
+    )
 
     output = {
         'generated_at': datetime.now(timezone.utc).isoformat(),
@@ -400,6 +397,12 @@ def main():
             'train_end': str(train_df.index[-1]),
         },
         'config': final_config,
+        'live_gates': {
+            'min_rr_ratio': PRODUCTION_MIN_RR,
+            'min_confidence': PRODUCTION_MIN_CONFIDENCE,
+            'max_open_trades': 1,
+            'test_slice_warmup': 'strategy sees prior candles as history; trades only from train_end onward',
+        },
         'enabled_rules': enabled_rules,
         'expiry_hours': expiry_hours,
         'per_rule_validation': validation,

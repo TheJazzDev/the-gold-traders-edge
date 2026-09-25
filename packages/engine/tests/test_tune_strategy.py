@@ -191,7 +191,8 @@ class TestResolvedStats:
     def test_zero_resolved_trades_returns_zero_stats(self):
         result = FakeBacktestResult([_trade(TradeStatus.CLOSED_MANUAL, 5000.0)])
         stats = _resolved_stats(result)
-        assert stats == {'profit_factor': 0.0, 'total_trades': 0, 'win_rate': 0.0, 'net_profit_pct': 0.0}
+        assert stats == {'profit_factor': 0.0, 'total_trades': 0, 'win_rate': 0.0,
+                         'net_profit_pct': 0.0, 'max_losing_streak': 0}
 
 
 class TestScaleBaselineConfig:
@@ -297,3 +298,31 @@ class TestTimeframeDefaults:
 
     def test_timeframe_minutes_covers_all_supported_timeframes(self):
         assert TIMEFRAME_MINUTES == {'5m': 5, '15m': 15, '30m': 30, '1h': 60, '4h': 240, '1d': 1440}
+
+
+class TestLiveGatesInTuning:
+    """B5: the tuner must score the same trades live publishes."""
+
+    def test_confidence_below_live_minimum_is_dropped(self):
+        signal = StrategySignal(
+            time=pd.Timestamp('2026-01-01', tz='UTC'), direction=TradeDirection.LONG,
+            entry_price=2000.0, stop_loss=1990.0, take_profit=2030.0,
+            signal_name='test', confidence=0.55,
+        )
+        strategy = GoldStrategy()
+        strategy.evaluate = lambda df, idx: signal
+        assert _production_valid_strategy_func(strategy)(pd.DataFrame(), 0) is None
+
+    def test_gate_config_carries_live_gates(self):
+        from tune_strategy import gate_config
+        assert gate_config() == {
+            'reentry_cooldown_candles': 20, 'htf_trend_filter': False,
+            'trend_ema_period': 200, 'trend_slope_candles': 24,
+        }
+        assert gate_config(htf_trend_filter=True)['htf_trend_filter'] is True
+
+    def test_slice_warmup_covers_strategy_and_trend_gate(self):
+        from tune_strategy import slice_warmup_candles
+        assert slice_warmup_candles({'trend_lookback': 200}) == 250
+        assert slice_warmup_candles({'trend_lookback': 200, 'htf_trend_filter': True,
+                                     'trend_ema_period': 200}) == 650
