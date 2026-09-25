@@ -34,7 +34,7 @@ class StoppedZone:
     type: str          # 'bullish' | 'bearish'
     low: float
     high: float
-    stopped_at: int    # positional index of the candle that hit the stop
+    stopped_at: int    # positional index of the latest candle that hit the stop
 
 
 def _zone_of(o: float, h: float, l: float, c: float) -> Optional[tuple]:
@@ -53,7 +53,8 @@ def stopped_out_zones(
     """
     Zones formed by candles in [start, idx) whose stop level was hit by any
     later candle up to and including idx (the evaluated candle has closed,
-    so its range is known). NaN ATR never counts as a hit.
+    so its range is known), with the most recent such candle. NaN ATR never
+    counts as a hit.
     """
     o, h, l, c = (df[col].to_numpy() for col in ('open', 'high', 'low', 'close'))
     atr = np.asarray(atr, dtype=float)
@@ -71,7 +72,10 @@ def stopped_out_zones(
             hit = l[later] < low - buffer
         hit &= ~np.isnan(buffer)
         if hit.any():
-            zones.append(StoppedZone(kind, low, high, i + 1 + int(np.argmax(hit))))
+            # The most recent stop-out: the cooldown runs from the last time
+            # the level failed, not the first.
+            last = len(hit) - 1 - int(np.argmax(hit[::-1]))
+            zones.append(StoppedZone(kind, low, high, i + 1 + last))
     return zones
 
 

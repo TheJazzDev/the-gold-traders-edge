@@ -154,6 +154,18 @@ class TestStoppedOutZones:
 
         assert ('bearish', 1994.8, 2010.0, 55) in [(z.type, z.low, z.high, z.stopped_at) for z in zones]
 
+    def test_cooldown_runs_from_the_most_recent_stop_out(self):
+        """OBR-0908-01's zone had already been broken hours before it was
+        published, then stopped it out again at 09-09 07:00; OBR-0909-01
+        re-sold it 3 candles later. Counting from the first break would
+        have let the cooldown lapse in between."""
+        df = flat_df()
+        bearish_block_at(df, 30)
+        put(df, 32, 1996.0, 2015.0, 1995.0, 1996.0)   # first break
+        put(df, 56, 1996.0, 2015.0, 1995.0, 1996.0)   # broken again later
+        zones = stopped_out_zones(df, 60, atr_of(df), sl_buffer_atr=0.3, start=20)
+        assert [z.stopped_at for z in zones if z.low == 1994.8] == [56]
+
     def test_nan_atr_never_counts_as_a_stop_out(self):
         df = flat_df()
         bearish_block_at(df, 50)
