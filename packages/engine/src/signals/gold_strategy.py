@@ -257,7 +257,12 @@ class GoldStrategy:
             if not trend_allows(direction, htf_trend):
                 return result
 
-        trend = self.ta.detect_trend(lookback=30)
+        # Confidence bonus: the last two swing highs/lows anywhere in the
+        # frame, which is what live ran (and what was validated) before
+        # detect_trend started honouring its lookback. A literal 30-candle
+        # window cut test-slice PF from 1.57 to 1.37 — see the 2026-09-25
+        # entry in docs/superpowers/specs/strategy-ledger.md.
+        trend = self.ta.detect_trend(lookback=len(self.ta.df))
 
         confidence = 0.55
         if (ob['type'] == 'bullish' and trend == TrendDirection.UPTREND) or \

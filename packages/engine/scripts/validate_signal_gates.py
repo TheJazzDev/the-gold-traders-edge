@@ -15,10 +15,12 @@ live gates on: R:R >= 1.5, confidence >= 0.60, one open trade):
     legacy    - the old tuner method (no confidence gate, no warm-up);
                 should reproduce 1h.json's 114 trades / PF 1.16
     before    - what live actually ran: old detect_trend, no cooldown
-    b1_b2     - + re-entry cooldown (B1 is the one-open-trade rule the
-                backtest always had)
-    b1_b2_dt  - + detect_trend lookback fix, for context
-    b1_b2_b3  - + detect_trend fix + HTF trend gate
+    b1_b2         - + re-entry cooldown (B1 is the one-open-trade rule the
+                    backtest always had)
+    b1_b2_shipped - the same, on this branch's code (must equal b1_b2)
+    b1_b2_dt30    - + detect_trend honouring lookback=30 literally
+    b1_b2_b3      - shipped B1+B2 + HTF trend gate
+    b1_b2_dt30_b3 - b1_b2_dt30 + HTF trend gate
   EURUSD / GBPUSD Asian Range London Breakout
     legacy    - the old tuner method; should reproduce 50 / 47 trades
     before    - live gates, no trend gate
@@ -79,13 +81,21 @@ def _legacy_trend_by_swings(self, df):
 
 
 _CURRENT_TREND_BY_SWINGS = TechnicalAnalysis._trend_by_swings
+_CURRENT_DETECT_TREND = TechnicalAnalysis.detect_trend
 
+# trend: how OBR's confidence-bonus trend is computed.
+#   'legacy'   - pre-fix code path, patched back in (what live ran)
+#   'shipped'  - this branch as committed (full-frame swings; identical
+#                result to 'legacy', run to prove it)
+#   'window30' - detect_trend honouring lookback=30 literally
 GOLD_VARIANTS = {
-    'legacy':   dict(legacy_method=True,  legacy_trend=True,  cooldown=0,  gate=False),
-    'before':   dict(legacy_method=False, legacy_trend=True,  cooldown=0,  gate=False),
-    'b1_b2':    dict(legacy_method=False, legacy_trend=True,  cooldown=20, gate=False),
-    'b1_b2_dt': dict(legacy_method=False, legacy_trend=False, cooldown=20, gate=False),
-    'b1_b2_b3': dict(legacy_method=False, legacy_trend=False, cooldown=20, gate=True),
+    'legacy':         dict(legacy_method=True,  trend='legacy',   cooldown=0,  gate=False),
+    'before':         dict(legacy_method=False, trend='legacy',   cooldown=0,  gate=False),
+    'b1_b2':          dict(legacy_method=False, trend='legacy',   cooldown=20, gate=False),
+    'b1_b2_shipped':  dict(legacy_method=False, trend='shipped',  cooldown=20, gate=False),
+    'b1_b2_dt30':     dict(legacy_method=False, trend='window30', cooldown=20, gate=False),
+    'b1_b2_b3':       dict(legacy_method=False, trend='shipped',  cooldown=20, gate=True),
+    'b1_b2_dt30_b3':  dict(legacy_method=False, trend='window30', cooldown=20, gate=True),
 }
 FOREX_VARIANTS = {
     'legacy': dict(legacy_method=True,  gate=False),
@@ -112,9 +122,12 @@ def run_job(job):
 
     if symbol == 'XAUUSD':
         v = GOLD_VARIANTS[variant]
-        # Set on every job (pool workers are reused), never left over.
         TechnicalAnalysis._trend_by_swings = (
-            _legacy_trend_by_swings if v['legacy_trend'] else _CURRENT_TREND_BY_SWINGS
+            _legacy_trend_by_swings if v['trend'] == 'legacy' else _CURRENT_TREND_BY_SWINGS
+        )
+        TechnicalAnalysis.detect_trend = (
+            (lambda self, lookback=50, method='swing': _CURRENT_DETECT_TREND(self, 30, method))
+            if v['trend'] == 'window30' else _CURRENT_DETECT_TREND
         )
         base = json.loads((ENGINE / 'tuned_configs/1h.json').read_text())['config']
         config = {**base, 'reentry_cooldown_candles': v['cooldown'], 'htf_trend_filter': v['gate']}
@@ -147,10 +160,13 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--out', default='gate_validation.json')
     parser.add_argument('--workers', type=int, default=7)
+    parser.add_argument('--only', nargs='*', help='Run only these variant names')
     args = parser.parse_args()
 
     jobs = [('XAUUSD', v, s) for v in GOLD_VARIANTS for s in ('test', 'train')]
     jobs += [(sym, v, s) for sym in ('EURUSD', 'GBPUSD') for v in FOREX_VARIANTS for s in ('test', 'train')]
+    if args.only:
+        jobs = [j for j in jobs if j[1] in args.only]
     # Longest (gold train) first so the pool stays busy.
     jobs.sort(key=lambda j: (j[0] != 'XAUUSD', j[2] != 'train'))
 
@@ -159,7 +175,7 @@ def main():
     with Pool(args.workers, maxtasksperchild=1) as pool:
         results = []
         for r in pool.imap_unordered(run_job, jobs):
-            print(f"{r['symbol']} {r['variant']:9} {r['slice']:5} PF={r['profit_factor']:.2f} "
+            print(f"{r['symbol']} {r['variant']:14} {r['slice']:5} PF={r['profit_factor']:.2f} "
                   f"trades={int(r['total_trades'])} WR={r['win_rate']:.1f}% net={r['net_profit_pct']:.1f}% "
                   f"maxLS={int(r['max_losing_streak'])}", flush=True)
             results.append(r)

@@ -53,3 +53,27 @@ class TestDetectTrendRespectsLookback:
         swings = ta.detect_swing_points(lookback=3, min_strength=1)
         assert len(swings) > 8
         assert swings[0].index < ta.df.index[20]
+
+
+class TestOrderBlockRetestKeepsValidatedTrend:
+    """OBR's confidence bonus was validated with the pre-fix behaviour —
+    the last two swing highs/lows anywhere in the frame. Honouring
+    lookback=30 literally cut test-slice PF from 1.57 to 1.37 (see the
+    2026-09-25 ledger entry), so OBR asks for the whole frame explicitly."""
+
+    def test_obr_asks_detect_trend_for_the_whole_frame(self, monkeypatch):
+        sys.path.insert(0, str(Path(__file__).parent))
+        from test_trend_gate import bullish_retest_df
+        from signals.gold_strategy import GoldStrategy
+
+        calls = []
+        original = TechnicalAnalysis.detect_trend
+
+        def spy(self, lookback=50, method="swing"):
+            calls.append((lookback, len(self.df)))
+            return original(self, lookback=lookback, method=method)
+
+        monkeypatch.setattr(TechnicalAnalysis, 'detect_trend', spy)
+        df = bullish_retest_df()
+        assert GoldStrategy(config={'atr_period': 14}).evaluate(df, len(df) - 1) is not None
+        assert calls and all(lookback == frame_len for lookback, frame_len in calls)
