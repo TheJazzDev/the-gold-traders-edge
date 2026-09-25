@@ -96,6 +96,93 @@ detection.
 
 ---
 
+## 2026-09-25: live-parity gates after the 7-stop-loss week (B1-B5)
+
+**Trigger:** 7 of 9 resolved signals stopped out between 2026-09-23 and 09-25
+(see `docs/superpowers/2026-09-25-weekly-signal-review.md`). 6 of the 7 were
+*stacked* signals, published while another same-symbol signal was still open.
+They weren't counter-trend: every losing gold short was with the daily and 4H
+trend.
+
+**Method:** `packages/engine/scripts/validate_signal_gates.py`. It uses a
+chronological 70/30 split. Gold data: `xauusd_1h_2024_2026.csv`, test from
+2026-01-16. Forex data: `*_1h_2023_2026.csv`, test from 2025-11-05. Configs are
+fixed (gold: committed `tuned_configs/1h.json`; forex: committed defaults), so
+nothing is swept. The variants and the pass rule were chosen before any results
+were seen. The pass rule for B3/B4: test PF improves *and* ≥ ~50 test trades.
+
+- "Live gates" means R:R ≥ 1.5, confidence ≥ 0.60 and one open trade.
+- The test slice is scored with the preceding candles as warm-up history, but no
+  trade opens before the slice starts.
+- The "legacy" row reproduces the old tuner exactly (gold 114 trades / PF 1.16;
+  EURUSD 50 / 1.18; GBPUSD 47 / 1.58), which checks the harness.
+
+### XAUUSD — Order Block Retest
+
+| Variant | Test PF | Test trades | Test WR | Test net % | Test max losing streak | Train PF (trades) |
+|---|---|---|---|---|---|---|
+| Legacy tuner method (no confidence gate) | 1.16 | 114 | 37.7% | +28.7% | 8 | 1.03 (319) |
+| **Before**: what live ran (live gates, no cooldown) | 1.48 | 140 | 43.6% | +121.8% | 8 | 1.00 (270) |
+| **B1 + B2** (re-entry cooldown 20) — shipped | **1.57** | **83** | 44.6% | +68.5% | **6** | 1.17 (164) |
+| B1 + B2, `detect_trend` taken literally as lookback=30 | 1.37 | 81 | 42.0% | +46.8% | 7 | 1.07 (126) |
+| **B1 + B2 + B3** (1H EMA200 trend gate) | 1.33 | 59 | 40.7% | +26.4% | 9 | 1.22 (100) |
+| B1 + B2 + B3, with the literal lookback=30 | 1.17 | 53 | 37.7% | +12.5% | 9 | 1.09 (75) |
+
+(B1, one open trade per symbol, isn't a separate row: every backtest has always
+run with `max_open_trades=1`. B1 makes live match that.)
+
+- **B1 — ✅ shipped.** It's a parity fix and can't be measured separately in a
+  backtest. On this week's real signals it would have turned −2.0R into 0.0R on
+  gold (simulated counterfactual in the weekly review).
+- **B2 — ✅ PASS, shipped on by default** (`reentry_cooldown_candles=20`). PF
+  improves on *both* slices (train 1.00 → 1.17, test 1.48 → 1.57) and the max
+  losing streak drops from 8 to 6. The costs: trade count falls 41% (140 → 83),
+  and so does test net % (+121.8% → +68.5%), because the strategy stands aside in
+  choppy ranges. That's a risk-for-return trade-off, not a free improvement.
+  Definition: a zone stops out when a later candle trades through the stop OBR
+  would use (edge ± 0.3 × ATR). Any overlapping same-type zone is then skipped
+  for 20 candles after the *latest* stop-out.
+- **`detect_trend` lookback bug — API fixed, OBR behaviour kept.**
+  `detect_trend(lookback=N)` now only looks at the last N candles. Taking OBR's
+  `lookback=30` literally **failed** (test PF 1.57 → 1.37, train 1.17 → 1.07), so
+  OBR now passes its whole frame. That reproduces the validated behaviour exactly
+  (the `b1_b2_shipped` variant is identical to `b1_b2`).
+- **B3 — ❌ FAIL, not enabled** (`htf_trend_filter=False`). Test PF falls from
+  1.57 to 1.33 on 59 trades. It *improved* train (1.17 → 1.22), which is the
+  classic sign of a filter that doesn't generalise. It also wasn't the mechanism
+  this week: the losing shorts were all with the trend.
+
+### EURUSD / GBPUSD — Asian Range London Breakout
+
+| Variant | Symbol | Test PF | Test trades | Test WR | Test net % | Test max losing streak | Train PF (trades) |
+|---|---|---|---|---|---|---|---|
+| Before (live gates) | EURUSD | 1.18 | 50 | 38.0% | +12.6% | 7 | 1.29 (121) |
+| **+ B4** (1H EMA200 trend gate) | EURUSD | 1.98 | **27** | 51.9% | +33.2% | 3 | 1.49 (62) |
+| Before (live gates) | GBPUSD | 1.58 | 47 | 44.7% | +34.8% | 4 | 1.10 (128) |
+| **+ B4** | GBPUSD | 2.43 | **29** | 55.2% | +44.0% | 4 | 1.23 (73) |
+
+(Live gates change nothing for ARLB: confidence is always 0.60, and the "before"
+rows equal the legacy tuner rows.)
+
+- **B4 — ❌ FAIL on sample size, not enabled.** PF improves on both pairs and
+  both slices, which is encouraging. But the test counts, 27 and 29, are far below
+  the ~50-trade bar, and at that size PF 2.0 vs 1.2 is within noise. Revisit once
+  about 1 more year of data doubles the test slice. Don't enable it on this
+  evidence.
+
+### B5 — tuner parity
+
+`backtesting/live_parity.py` is now used by both tuners: the confidence gate,
+one open trade, the test slice with warm-up history, and the max losing streak.
+One consequence: **the 37.7% win rate / PF 1.16 quoted for OBR since August was
+measured on a different trade population from the live one.** The live-equivalent
+figures are 43.6% / PF 1.48 before the fixes, and 44.6% / PF 1.57 after B1+B2.
+`tuned_configs/1h.json` has **not** been regenerated. Its shared config is
+unchanged, and it still reports the old numbers. Re-run `tune_strategy.py
+--data ... --timeframe 1h` to refresh them.
+
+---
+
 ## Validated, live
 
 ### Order Block Retest
@@ -106,6 +193,10 @@ detection.
   test slice (`tuned_configs/1h.json`). Confirmed live: first real signal
   (2026-09-04) hit TP for +2.0R.
 - **Verdict:** ✅ The only currently validated, live-enabled edge.
+- **2026-09-25:** re-measured with live's gates. The live-equivalent test
+  slice is PF 1.48 / 140 trades / 43.6% win rate, and PF 1.57 / 83 trades /
+  44.6% with the new re-entry cooldown. The HTF trend gate failed (PF 1.33). See
+  the 2026-09-25 entry above.
 
 ---
 
