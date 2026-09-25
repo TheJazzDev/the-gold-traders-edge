@@ -45,7 +45,7 @@ redis>=5.0.0
 celery>=5.3.0
 
 # Database
-sqlalchemy>=2.0.0
+sqlalchemy>=2.0.0,<2.1  # 2.1 defaults postgresql:// to psycopg v3; we ship psycopg2
 asyncpg>=0.29.0
 psycopg2-binary>=2.9.9
 alembic>=1.13.0
