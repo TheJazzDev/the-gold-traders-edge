@@ -47,6 +47,7 @@ from database.models import Base
 from database.signal_repository import SignalRepository
 from database.settings_repository import SettingsRepository
 from report import build_report_text
+from services.weekly_parity import ParityTarget, build_weekly_parity_text
 
 # Configure logging
 logging.basicConfig(
@@ -133,6 +134,12 @@ class TimeframeWorker:
         self.last_start_time: float = None
         self.restart_backoff_seconds = 10
         self.next_restart_allowed_at: float = None
+        # Set once _run() has built them; the weekly parity check replays
+        # the week with exactly what this worker runs.
+        self.strategy = None
+        self.validator: SignalValidator = None
+        self.expiry_hours: float = None
+        self.lookback_periods: int = None
 
     @property
     def symbol(self) -> str:
@@ -377,6 +384,11 @@ class TimeframeWorker:
             # the settings' own defaults and immediately overwritten by
             # refresh_settings() on the first pre_run_hook call below.
             validator = SignalValidator(min_rr_ratio=1.5, min_confidence=0.0)
+
+            self.strategy = strategy
+            self.validator = validator
+            self.expiry_hours = expiry_hours
+            self.lookback_periods = lookback_periods
 
             # Create generator
             self.generator = RealtimeSignalGenerator(
@@ -753,6 +765,25 @@ class MultiTimeframeService:
         except Exception as e:
             logger.error(f"Failed to persist last weekly report time: {e}", exc_info=True)
 
+    def _build_parity_section(self) -> Optional[str]:
+        """Replay the week through the backtest and compare with live (see
+        services/weekly_parity.py). Never blocks the report: on any failure
+        the report goes out without this section."""
+        try:
+            targets = [
+                ParityTarget(symbol=w.symbol, timeframe=w.timeframe, strategy=w.strategy,
+                             min_rr=w.validator.min_rr_ratio, min_confidence=w.validator.min_confidence,
+                             expiry_hours=w.expiry_hours, warmup=w.lookback_periods)
+                for w in self.workers.values() if w.strategy is not None
+            ]
+            db_manager = DatabaseManager(self.database_url)
+            with db_manager.session_scope() as session:
+                live_signals = SignalRepository(session).get_recent(days=7, limit=1000)
+                return build_weekly_parity_text(targets, live_signals, _fetch_parity_candles, days=7)
+        except Exception as e:
+            logger.error(f"Failed to build parity section: {e}", exc_info=True)
+            return None
+
     def _send_weekly_report(self):
         """Send the last 7 days of signal performance stats to Telegram."""
         from database.connection import DatabaseManager
@@ -763,10 +794,21 @@ class MultiTimeframeService:
                 stats = repo.get_performance_stats(days=7)
 
             message = "📅 Weekly Performance Report\n\n" + build_report_text(stats, days=7)
+            parity = self._build_parity_section()
+            if parity:
+                message += "\n\n" + parity
             self.telegram_subscriber.send_custom_message(message)
             logger.info("✅ Weekly performance report sent to Telegram")
         except Exception as e:
             logger.error(f"Failed to send weekly report: {e}", exc_info=True)
+
+
+def _fetch_parity_candles(target, count):
+    """The latest `count` closed candles from the same feed live uses."""
+    feed = create_datafeed(feed_type=os.getenv('DATA_FEED_TYPE', 'yahoo'), symbol=target.symbol,
+                           timeframe=target.timeframe, lookback_periods=count)
+    feed.connect()
+    return feed.get_latest_candles(count=count)
 
 
 def main():

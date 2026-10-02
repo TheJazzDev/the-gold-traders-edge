@@ -44,10 +44,11 @@ def live_gated_strategy_func(strategy, min_rr: float = PRODUCTION_MIN_RR,
 
 
 def run_on_window(df: pd.DataFrame, start: pd.Timestamp, strategy_func: StrategyFunc,
-                  warmup: int) -> BacktestResult:
+                  warmup: int, expiry_hours: Optional[float] = None) -> BacktestResult:
     """
     Backtest df from `start` onward, feeding the strategy `warmup` extra
     candles of history before `start` without letting it trade on them.
+    `expiry_hours` cancels unresolved trades as live does (None = never).
     """
     start_pos = df.index.get_loc(start)
     frame = df.iloc[max(0, start_pos - warmup):]
@@ -58,7 +59,7 @@ def run_on_window(df: pd.DataFrame, start: pd.Timestamp, strategy_func: Strategy
         return strategy_func(frame_df, idx)
 
     engine = BacktestEngine(initial_balance=10000, position_size_pct=2.0)
-    return engine.run(frame, windowed, max_open_trades=1)
+    return engine.run(frame, windowed, max_open_trades=1, expiry_hours=expiry_hours)
 
 
 def max_losing_streak(trades: List[Trade]) -> int:

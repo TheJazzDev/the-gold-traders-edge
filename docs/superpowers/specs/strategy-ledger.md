@@ -183,6 +183,36 @@ unchanged, and it still reports the old numbers. Re-run `tune_strategy.py
 
 ---
 
+## 2026-10-02 — live vs backtest replay of the live period
+
+Live from 09-04 to 10-02 was 4W/13L, **−5R**. A replay of the same period
+(same Yahoo feed, live configs, live gates) scored 7W/9L, **+5R**. The 10R
+gap was plumbing, not strategy:
+
+| Cause | Effect | Status |
+|---|---|---|
+| 09-11 → 09-23 outage | Live missed 5 trades the replay took (+7R) | fixed earlier (bc9fadb) |
+| Stacked gold shorts 09-23/24 | 7 live shorts into one move, about −2R vs replay | fixed by B1 (09-25) |
+| Yahoo GC=F runs ~11 min late (FX < 1 min) | Live gold candles were missing their last ~10 min. Four live gold signals don't fire on complete candles, and entries were off by up to ~20 pts | **fixed**: per-ticker publish delay, gold evaluates at :15 |
+| Expiry counted wall-clock hours | ARLB-0925-01 cancelled on Sunday night after ~16 market hours, TP hit Monday. The freed slot took ARLB-0928-01 (SL): −1R vs +2R | **fixed**: expiry counts market hours (Fri 21:00 → Sun 21:00 UTC excluded), and the backtest now models the same expiry |
+
+FX signals reproduce exactly. Since the 09-25 deploy, live matches the replay
+except for the expiry knock-on.
+
+Even with clean plumbing the evidence for an edge is thin: replay gold OBR was
+−1R over 7 trades and FX ARLB +6R over 9. Neither number means much at that size.
+
+**Open:** the FX tuned configs have no `expiry_hours`, so they fall back to 48.
+With the backtest now modelling expiry, EURUSD 09-14 expires before reaching
+its TP. ARLB was validated with no expiry, so the 48h value itself is
+unvalidated. It needs a train/test run before it changes.
+
+The weekly Telegram report now has a "Backtest parity" section listing every
+trade where live and the replay disagree. `scripts/live_parity_replay.py
+--days N` runs the same check for any window.
+
+---
+
 ## Validated, live
 
 ### Order Block Retest

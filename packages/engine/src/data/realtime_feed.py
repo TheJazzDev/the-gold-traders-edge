@@ -72,6 +72,10 @@ class RealtimeDataFeed(ABC):
         self.lookback_periods = lookback_periods
         self.is_connected = False
         self.last_candle_time: Optional[datetime] = None
+        # How far behind real time the upstream publishes. A candle is only
+        # complete once its period AND this delay have elapsed — see
+        # YahooFinanceDataFeed.PUBLISH_DELAY_MINUTES.
+        self.data_delay_minutes = 0
 
     @abstractmethod
     def connect(self) -> bool:
@@ -139,33 +143,32 @@ class RealtimeDataFeed(ABC):
         Args:
             check_interval: Seconds between checks (default: 60)
         """
-        # Calculate time to next candle close
         now = datetime.now()
+        next_eval = self.next_evaluation_time(now)
+        wait_seconds = (next_eval - now).total_seconds()
 
-        # Map timeframe to hours
-        tf_hours = {
-            "1H": 1, "4H": 4, "1D": 24
-        }
-        hours = tf_hours.get(self.timeframe.upper(), 4)
-
-        # Calculate next candle close time
-        # For 4H: 00:00, 04:00, 08:00, 12:00, 16:00, 20:00 UTC
-        current_hour = now.hour
-        next_close_hour = ((current_hour // hours) + 1) * hours
-
-        if next_close_hour >= 24:
-            next_close = now.replace(hour=0, minute=0, second=0, microsecond=0) + timedelta(days=1)
-        else:
-            next_close = now.replace(hour=next_close_hour, minute=0, second=0, microsecond=0)
-
-        wait_seconds = (next_close - now).total_seconds()
-
-        print(f"⏳ Next {self.timeframe} candle closes at {next_close.strftime('%Y-%m-%d %H:%M:%S UTC')}")
+        print(f"⏳ Next {self.timeframe} candle is complete at {next_eval.strftime('%Y-%m-%d %H:%M:%S UTC')}"
+              f" (close + {self.data_delay_minutes}m publish delay)")
         print(f"   Waiting {wait_seconds / 60:.1f} minutes...")
 
-        # Wait until candle close
-        while datetime.now() < next_close:
+        while datetime.now() < next_eval:
             time.sleep(check_interval)
+
+    def next_evaluation_time(self, now: datetime) -> datetime:
+        """
+        When the next candle is complete upstream: its close plus the
+        feed's publish delay. Measured from `now - delay`, so a worker
+        that wakes inside the delay window (e.g. a restart at 18:05 with a
+        15m delay) still evaluates the 17:00 candle at 18:15 instead of
+        skipping it.
+        """
+        delay = timedelta(minutes=self.data_delay_minutes)
+        step = self.get_timeframe_minutes()
+        shifted = now - delay
+        midnight = shifted.replace(hour=0, minute=0, second=0, microsecond=0)
+        elapsed_minutes = int((shifted - midnight).total_seconds() // 60)
+        next_close = midnight + timedelta(minutes=(elapsed_minutes // step + 1) * step)
+        return next_close + delay
 
     def _drop_incomplete_candle(self, df: pd.DataFrame) -> pd.DataFrame:
         """
@@ -191,8 +194,9 @@ class RealtimeDataFeed(ABC):
 
         now = datetime.now(timezone.utc).replace(tzinfo=None)
         duration = timedelta(minutes=self.get_timeframe_minutes())
+        delay = timedelta(minutes=self.data_delay_minutes)
 
-        return df[df.index + duration <= now]
+        return df[df.index + duration + delay <= now]
 
     def get_timeframe_minutes(self) -> int:
         """Get timeframe in minutes."""
@@ -216,6 +220,16 @@ class YahooFinanceDataFeed(RealtimeDataFeed):
     Best for: Development, testing, demo
     """
 
+    # Yahoo publishes CME/COMEX futures late: GC=F measured ~11 min behind
+    # real time on 2026-10-02 (FX tickers lag under a minute). Evaluating
+    # at the hour scored gold candles missing their last ~10 minutes, so
+    # live gold signals didn't match the complete candles the backtest
+    # validates. 15 leaves headroom over the measured lag.
+    PUBLISH_DELAY_MINUTES = {
+        "GC=F": 15,
+        "SI=F": 15,
+    }
+
     def __init__(
         self,
         symbol: str = "XAUUSD",
@@ -236,6 +250,7 @@ class YahooFinanceDataFeed(RealtimeDataFeed):
             "GBPUSD": "GBPUSD=X",
             "EURUSD": "EURUSD=X",
         }
+        self.data_delay_minutes = self.PUBLISH_DELAY_MINUTES.get(self.ticker_map.get(symbol), 0)
 
     def connect(self) -> bool:
         """Initialize Yahoo Finance connection."""

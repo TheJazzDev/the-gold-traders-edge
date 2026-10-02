@@ -61,7 +61,9 @@ def evaluate_signal_outcome(
         if candle['low'] <= signal.take_profit:
             return OutcomeAction.CLOSED_TP
 
-    elapsed_hours = (candle_time - signal.timestamp).total_seconds() / 3600
+    # Market hours, not wall-clock: the weekend close mustn't expire a
+    # signal (see utils/market_hours.py).
+    elapsed_hours = market_hours_between(signal.timestamp, candle_time)
     if elapsed_hours > expiry_hours:
         return OutcomeAction.EXPIRED
 
@@ -76,6 +78,7 @@ sys.path.insert(0, str(_Path(__file__).parent.parent))
 from database.connection import DatabaseManager
 from database.models import SignalStatus
 from database.signal_repository import SignalRepository
+from utils.market_hours import market_hours_between
 
 
 class SignalOutcomeTracker:

@@ -11,6 +11,8 @@ from datetime import datetime
 from enum import Enum
 import json
 
+from utils.market_hours import market_hours_between
+
 
 class TradeDirection(Enum):
     LONG = "long"
@@ -22,6 +24,7 @@ class TradeStatus(Enum):
     CLOSED_TP = "closed_tp"  # Closed at take profit
     CLOSED_SL = "closed_sl"  # Closed at stop loss
     CLOSED_MANUAL = "closed_manual"  # Manual close
+    EXPIRED = "expired"  # No TP/SL within expiry_hours; live cancels these with no P&L
 
 
 @dataclass
@@ -388,13 +391,26 @@ class BacktestEngine:
         for trade in trades_to_remove:
             self.open_trades.remove(trade)
     
+    def expire_trades(self, current_time: pd.Timestamp, expiry_hours: float):
+        """
+        Cancel trades open longer than `expiry_hours` market hours, after
+        the TP/SL check — the same order and clock as live
+        (signals/outcome_tracker.evaluate_signal_outcome). Closed at entry
+        for zero P&L: live records an expiry with no exit and no P&L.
+        """
+        for trade in self.open_trades[:]:
+            if market_hours_between(trade.entry_time, current_time) > expiry_hours:
+                trade.close(current_time, trade.entry_price, TradeStatus.EXPIRED)
+                self.open_trades.remove(trade)
+
     def run(
         self,
         df: pd.DataFrame,
         strategy_func: Callable[[pd.DataFrame, int], Optional[Signal]],
         start_date: Optional[str] = None,
         end_date: Optional[str] = None,
-        max_open_trades: int = 1
+        max_open_trades: int = 1,
+        expiry_hours: Optional[float] = None
     ) -> BacktestResult:
         """
         Run the backtest.
@@ -405,6 +421,8 @@ class BacktestEngine:
             start_date: Start date for backtest (optional)
             end_date: End date for backtest (optional)
             max_open_trades: Maximum concurrent open trades
+            expiry_hours: Cancel a trade with no TP/SL after this many
+                market hours, as live's outcome tracker does. None = never.
         
         Returns:
             BacktestResult object
@@ -430,6 +448,8 @@ class BacktestEngine:
             
             # Check and close existing trades
             self.check_and_close_trades(candle, current_time)
+            if expiry_hours is not None:
+                self.expire_trades(current_time, expiry_hours)
             
             # Record equity
             open_pnl = sum(

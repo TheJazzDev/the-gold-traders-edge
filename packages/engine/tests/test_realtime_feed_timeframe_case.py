@@ -55,7 +55,9 @@ class TestGetLatestCandlesUsesCorrectInterval:
 
 class TestWaitForCandleCloseUsesCorrectCadence:
     def test_lowercase_1h_schedules_next_close_one_hour_out(self, capsys):
-        feed = YahooFinanceDataFeed(symbol="XAUUSD", timeframe="1h")
+        # EURUSD: no publish delay, so this isolates the cadence (gold's
+        # delay is covered in test_realtime_feed_data_delay.py).
+        feed = YahooFinanceDataFeed(symbol="EURUSD", timeframe="1h")
         fixed_now = datetime(2026, 8, 26, 12, 0, 25)
         past_close = datetime(2026, 8, 26, 13, 0, 1)
 
@@ -70,4 +72,4 @@ class TestWaitForCandleCloseUsesCorrectCadence:
         # A 1h timeframe polled at 12:00 must target the 13:00 boundary,
         # not the old buggy 4h-aligned 16:00 boundary.
         output = capsys.readouterr().out
-        assert "Next 1h candle closes at 2026-08-26 13:00:00 UTC" in output
+        assert "Next 1h candle is complete at 2026-08-26 13:00:00 UTC" in output
