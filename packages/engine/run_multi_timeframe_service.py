@@ -138,7 +138,7 @@ class TimeframeWorker:
         # the week with exactly what this worker runs.
         self.strategy = None
         self.validator: SignalValidator = None
-        self.expiry_hours: float = None
+        self.expiry_hours: Optional[float] = None
         self.lookback_periods: int = None
 
     @property
@@ -219,7 +219,9 @@ class TimeframeWorker:
             # Config shape varies: gold's tuned_configs/1h.json has
             # `enabled_rules` (a multi-rule strategy's initial rule
             # selection) and `expiry_hours`; GBPUSD/EURUSD's tuned configs
-            # (written by tune_forex_session_strategy.py) have neither —
+            # (written by tune_forex_session_strategy.py) have no
+            # enabled_rules, and `expiry_hours: null` (never expire, as ARLB
+            # was validated; 48h is only for a config with no key) —
             # ForexSessionStrategy has exactly one rule, and its live
             # enabled/disabled state comes entirely from the
             # enabled_forex_symbols DB setting via refresh_settings() below,

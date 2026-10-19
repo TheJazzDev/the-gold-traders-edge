@@ -21,7 +21,7 @@ class ParityTarget:
     strategy: object
     min_rr: float
     min_confidence: float
-    expiry_hours: float
+    expiry_hours: Optional[float]  # None = never expires
     warmup: int  # candles of history live evaluates with (its lookback_periods)
 
 

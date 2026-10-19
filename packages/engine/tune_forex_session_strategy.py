@@ -121,6 +121,9 @@ def main():
             'test_slice_warmup': 'strategy sees prior candles as history; trades only from train_end onward',
         },
         'enabled': passed_train and passed_test,
+        # Validated with no expiry; live reads null as "never expire". The
+        # 48h fallback cut ARLB's slow winners (strategy-ledger.md, 2026-10-19).
+        'expiry_hours': None,
         'train': train_stats,
         'test': test_stats,
         'note': (

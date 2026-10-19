@@ -40,10 +40,11 @@ def evaluate_signal_outcome(
     signal: OpenSignalLike,
     candle: pd.Series,
     candle_time: datetime,
-    expiry_hours: float,
+    expiry_hours: Optional[float],
 ) -> OutcomeAction:
     """
     Decide what should happen to `signal` given a new candle.
+    `expiry_hours=None` never expires (ARLB is validated that way).
 
     Never evaluates a candle at or before the signal's own entry time.
     """
@@ -63,6 +64,8 @@ def evaluate_signal_outcome(
 
     # Market hours, not wall-clock: the weekend close mustn't expire a
     # signal (see utils/market_hours.py).
+    if expiry_hours is None:
+        return OutcomeAction.NONE
     elapsed_hours = market_hours_between(signal.timestamp, candle_time)
     if elapsed_hours > expiry_hours:
         return OutcomeAction.EXPIRED
@@ -93,7 +96,7 @@ class SignalOutcomeTracker:
         database_url: str,
         symbol: str,
         timeframe: str,
-        expiry_hours: float,
+        expiry_hours: Optional[float],
         telegram_subscriber: Optional["object"] = None,
     ):
         self.db_manager = DatabaseManager(database_url)

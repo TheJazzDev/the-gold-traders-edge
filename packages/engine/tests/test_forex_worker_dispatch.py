@@ -1,7 +1,7 @@
 """Regression coverage: TimeframeWorker._run() must dispatch on the
 WorkerSpec's symbol/strategy_class instead of hardcoding XAUUSD/GoldStrategy,
-and must tolerate GBPUSD/EURUSD's tuned config shape (no enabled_rules or
-expiry_hours keys — confirmed by inspection, see
+and must tolerate GBPUSD/EURUSD's tuned config shape (no enabled_rules key,
+expiry_hours null — see
 docs/superpowers/specs/2026-09-09-gbpusd-eurusd-worker-wiring-design.md)."""
 import json
 import sys
@@ -64,6 +64,35 @@ class TestForexWorkerDispatch:
         # No KeyError raised (test passing at all is the primary assertion);
         # also confirm the 48.0-hour fallback expiry was used.
         assert mock_tracker_cls.call_args.kwargs["expiry_hours"] == 48.0
+
+    def test_forex_tuned_config_with_null_expiry_disables_expiry(self, tmp_path, monkeypatch):
+        """`expiry_hours: null` means never expire (how ARLB was validated),
+        not the 48h fallback that's only for a config with no key at all."""
+        monkeypatch.setattr(svc_module, "__file__", str(tmp_path / "run_multi_timeframe_service.py"))
+        tuned_dir = tmp_path / "tuned_configs"
+        tuned_dir.mkdir()
+        (tuned_dir / "gbpusd_1h.json").write_text(json.dumps({
+            "config": ForexSessionStrategy.DEFAULT_CONFIG,
+            "enabled": True,
+            "expiry_hours": None,
+        }))
+        worker = make_worker(svc_module.GBPUSD_1H_SPEC, tmp_path)
+
+        with patch.object(svc_module, "create_datafeed"), \
+             patch.object(svc_module, "RealtimeSignalGenerator", return_value=MagicMock()), \
+             patch.object(svc_module, "SignalOutcomeTracker") as mock_tracker_cls:
+            worker._run()
+
+        assert mock_tracker_cls.call_args.kwargs["expiry_hours"] is None
+
+    def test_committed_forex_tuned_configs_have_no_expiry(self):
+        """2026-10-19: live's 48h fallback cut a third of ARLB's validated
+        trades (mostly winners) and took EURUSD test PF from 1.23 to 0.90.
+        The committed configs must carry the validated no-expiry setting."""
+        tuned_dir = Path(svc_module.__file__).parent / "tuned_configs"
+        for name in ("gbpusd_1h.json", "eurusd_1h.json"):
+            tuned = json.loads((tuned_dir / name).read_text())
+            assert "expiry_hours" in tuned and tuned["expiry_hours"] is None, name
 
     def test_gbpusd_tuned_config_without_enabled_rules_fails_closed(self, tmp_path, monkeypatch):
         """Finding 1 (2026-09-09 final whole-branch review): ForexSessionStrategy's

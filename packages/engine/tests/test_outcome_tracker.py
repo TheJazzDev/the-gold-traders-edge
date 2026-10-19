@@ -105,6 +105,21 @@ class TestEvaluateSignalOutcome:
         )
         assert result == OutcomeAction.EXPIRED
 
+    def test_no_expiry_when_expiry_hours_is_none(self):
+        """ARLB was validated with no expiry (tuned configs carry
+        expiry_hours: null); a signal must then stay open until TP or SL."""
+        signal = OpenSignalLike(
+            id=1, direction="LONG", entry_price=2000.0,
+            stop_loss=1990.0, take_profit=2030.0,
+            timestamp=datetime(2026, 1, 5, 10, 0),
+        )
+        candle = make_candle(low=1998.0, high=2005.0)
+        candle_time = datetime(2026, 1, 5, 10, 0) + timedelta(days=21)
+        result = evaluate_signal_outcome(
+            signal, candle, candle_time=candle_time, expiry_hours=None
+        )
+        assert result == OutcomeAction.NONE
+
     def test_ignores_candle_at_or_before_entry_time(self):
         """Never check a signal against its own entry candle."""
         signal = OpenSignalLike(

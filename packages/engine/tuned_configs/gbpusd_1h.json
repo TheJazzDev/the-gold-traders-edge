@@ -20,6 +20,7 @@
     "default_rr_ratio": 2.0
   },
   "enabled": true,
+  "expiry_hours": null,
   "train": {
     "profit_factor": 1.0955211031909775,
     "total_trades": 128,
