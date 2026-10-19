@@ -213,6 +213,51 @@ trade where live and the replay disagree. `scripts/live_parity_replay.py
 
 ---
 
+## 2026-10-19 — USD-exposure gate for ARLB (ruled out) and the 48h expiry
+
+**Why:** EURUSD and GBPUSD ARLB fired together in the same direction on 10-06
+and 10-13, and all four legs hit SL. Live ARLB stood at 1W/8L, −6R. See
+`docs/superpowers/2026-10-16-weekly-signal-review.md`.
+
+**Tested:** `packages/engine/scripts/validate_usd_exposure_gate.py`. It uses the
+committed configs, live gates and live's 48h expiry on a 70/30 split. Both
+variants were fixed before the test slice was scored:
+`drop_gbp` (skip GBPUSD when both enter on the same candle in the same
+direction; EURUSD kept for its better *train* PF) and `half_size` (0.5R per leg
+when they co-fire). Ship rule: net R / max drawdown beats `independent` on
+both slices.
+
+| Slice | independent | drop_gbp | half_size |
+|---|---|---|---|
+| train (224 trades) | −5R, DD 27R, ratio −0.19 | +2R, DD 17R, ratio 0.12 | −1.5R, DD 21R, ratio −0.07 |
+| test (80 trades) | +7R, DD 10R, ratio 0.70 | +5R, DD 8R, ratio 0.62 | 0R, DD 9R, ratio 0.00 |
+
+**Verdict:** ❌ both fail on test. Don't build either.
+
+The correlation is real, though. About 44% of GBPUSD trades co-fire with
+EURUSD, and those pairs had the same outcome 49/50 times on train and 15/17 on
+test. A co-fired day is one 2R dollar bet. It just isn't a worse bet than the
+rest.
+
+**Bigger finding: live's 48h expiry is what removes ARLB's validated edge.** ARLB was validated with no expiry. With no
+expiry this backtest reproduces those numbers exactly. With live's 48h it
+doesn't come close:
+
+| Pair | Slice | No expiry (validated) | 48h (live) |
+|---|---|---|---|
+| EURUSD | train | 121 tr, +26R, PF 1.36 | 107 tr, +7R, PF 1.10 |
+| EURUSD | test | 50 tr, +7R, PF 1.23 | 42 tr, −3R, PF 0.90 |
+| GBPUSD | train | 128 tr, +10R, PF 1.12 | 117 tr, −12R, PF 0.85 |
+| GBPUSD | test | 47 tr, +16R, PF 1.62 | 38 tr, +10R, PF 1.45 |
+
+About a third of validated ARLB trades (EURUSD 17/50, GBPUSD 15/47 on test)
+take longer than 48h to resolve. They're disproportionately winners, since
+the 2R target is the slow side. Gold doesn't have this problem: its tuner sets
+`expiry_hours` from the 95th percentile of test durations (143h), but the FX
+tuner never writes one.
+
+---
+
 ## Validated, live
 
 ### Order Block Retest
