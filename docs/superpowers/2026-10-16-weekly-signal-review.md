@@ -22,7 +22,7 @@ The parity numbers come from `scripts/live_parity_replay.py --days 9` and
 | OBR-1012-02 | XAUUSD | OBR | SHORT | 4193.40 | 4205.56 | 4169.07 | closed_sl | −1.0 | 0.65 | Mon 10-12 22:00 | Tue 10-13 04:00 |
 | ARLB-1013-01 | EURUSD | ARLB | LONG | 1.11919 | 1.11547 | 1.12664 | closed_sl | −1.0 | 0.60 | Tue 10-13 07:00 | Wed 10-14 12:00 |
 | ARLB-1013-02 | GBPUSD | ARLB | LONG | 1.32347 | 1.32027 | 1.32987 | closed_sl | −1.0 | 0.60 | Tue 10-13 07:00 | Wed 10-14 13:00 |
-| OBR-1015-01 | XAUUSD | OBR | LONG | 4167.30 | 4101.24 | 4299.43 | open | — | 0.65 | Thu 10-15 07:00 | — (+~30 pts at fetch, due to expire ~Mon 10-19 09:00) |
+| OBR-1015-01 | XAUUSD | OBR | LONG | 4167.30 | 4101.24 | 4299.43 | open | — | 0.65 | Thu 10-15 07:00 | — (+~30 pts at fetch; gold expiry is 143 market hours, so ~Thu 10-22) |
 
 ## 3. Totals
 
