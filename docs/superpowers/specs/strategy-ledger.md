@@ -256,6 +256,17 @@ the 2R target is the slow side. Gold doesn't have this problem: its tuner sets
 `expiry_hours` from the 95th percentile of test durations (143h), but the FX
 tuner never writes one.
 
+**Fixed and deployed 2026-10-19 (`5bd617d`):** the FX tuned configs now carry
+`expiry_hours: null`, which live's outcome tracker reads as "never expire". Judge
+live ARLB only from 2026-10-19 on.
+
+**Gold parity mismatches are data revisions, not logic.** The 10-05 04:00 live-only short
+was first put down to B1 ordering. It isn't: the engine closes trades before
+evaluating each candle, as live does (now tested). Yahoo revised GC=F candles
+after live read them. Live's SL implies ATR 17.195 against 17.329 on today's
+data, and on the revised data the B2 cooldown blocks the zone live traded.
+Expect a few gold mismatches like this. They aren't parity bugs.
+
 ---
 
 ## Validated, live

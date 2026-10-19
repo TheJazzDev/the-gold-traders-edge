@@ -115,3 +115,25 @@ class TestRunOnWindow:
         result = run_on_window(df, start=df.index[30], strategy_func=always, warmup=10)
         assert result.trades
         assert min(t.entry_time for t in result.trades) >= df.index[30]
+
+    def test_new_trade_can_open_on_the_candle_the_last_one_stops_out(self):
+        """Live's outcome tracker closes a stopped signal before the generator
+        evaluates that same candle, so B1 lets a new signal through on it
+        (OBR-1005-01 SL at 04:00, OBR-1005-02 published on the 04:00 candle).
+        The backtest must free the slot the same way, or parity breaks."""
+        df = self._df(n=10)
+        df.loc[df.index[5], 'low'] = 1980.0  # stops out the long opened at 2
+        opened_at = [df.index[2], df.index[5]]
+
+        def func(frame, idx):
+            if frame.index[idx] not in opened_at:
+                return None
+            return StrategySignal(time=frame.index[idx], direction=TradeDirection.LONG,
+                                  entry_price=2000.0, stop_loss=1990.0, take_profit=2030.0,
+                                  signal_name='t', confidence=0.9)
+
+        result = run_on_window(df, start=df.index[0], strategy_func=func, warmup=0)
+
+        assert [t.entry_time for t in result.trades] == opened_at
+        assert result.trades[0].status == TradeStatus.CLOSED_SL
+        assert result.trades[0].exit_time == df.index[5]

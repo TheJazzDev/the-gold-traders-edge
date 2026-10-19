@@ -51,14 +51,18 @@ Since the 2026-10-02 plumbing fixes, FX live and backtest match trade for trade.
 
 Gold signals that appear only in live:
 
-- **10-05 04:00 SHORT (SL, −1R).** The 10-05 00:00 long hit its SL inside the 04:00
-  candle. Live's outcome tracker closed it before the generator evaluated that
-  candle, so the one-open-signal gate (B1) let a new short through. The backtest
-  still had the long open on that bar and skipped it. It's an ordering difference
-  and should be rare.
-- **10-15 07:00 LONG (open).** Live's entry (4167.3) equals Yahoo's 07:00 close, so
-  delayed data isn't the cause. The backtest doesn't fire on that bar. The reason
-  isn't known yet.
+- **10-05 04:00 SHORT (SL, −1R).** *Corrected 2026-10-19: this is not an ordering
+  difference.* The backtest also closes a stopped trade before evaluating that
+  candle, as live does. `test_new_trade_can_open_on_the_candle_the_last_one_stops_out`
+  in `tests/test_live_parity.py` now locks that in. On today's Yahoo candles the
+  strategy returns no short at all on that candle. Live traded the bearish zone
+  4162.3–4176.8 (10-02 20:00). In today's data the 10-05 02:00 candle (high 4191.0)
+  had already stopped that zone out, so the B2 cooldown skips it. Live's SL implies
+  ATR 17.195, but today's candles give 17.329, so **Yahoo revised the gold candles
+  after live read them.** Live's input wasn't kept, so it can't be reconstructed
+  exactly.
+- **10-15 07:00 LONG.** Same cause. It was live-only on the morning's first run
+  and matches after Yahoo's data refreshed.
 
 ## 5. Findings
 
@@ -89,4 +93,5 @@ Gold signals that appear only in live:
   2026-10-19 and ruled out: both variants fail on test. The same run found that
   live's 48h FX expiry is what removes ARLB's validated edge. See strategy-ledger.md
   "2026-10-19".
-- Fix or document the B1 same-candle ordering difference so gold parity is exact.
+- ~~Fix or document the B1 same-candle ordering difference~~ Not an ordering bug: the
+  remaining gold mismatches come from Yahoo revising GC=F candles after live read them (§4).
