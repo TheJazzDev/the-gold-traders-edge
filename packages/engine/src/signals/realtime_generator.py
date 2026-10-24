@@ -26,6 +26,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 from data.realtime_feed import RealtimeDataFeed, create_datafeed, timeframe_minutes
 from signals.gold_strategy import GoldStrategy
 from signals.outcome_tracker import SignalOutcomeTracker
+from signals.candle_log import format_candle_log
 from backtesting.engine import Signal as StrategySignal, TradeDirection
 from instruments import price_to_pips
 
@@ -543,6 +544,7 @@ class RealtimeSignalGenerator:
             f"📊 Candle close at {df.index[-1]} | "
             f"Close: ${df['close'].iloc[-1]:.2f}"
         )
+        logger.info(format_candle_log(df, self.data_feed.symbol, self.data_feed.timeframe))
 
         if self.outcome_tracker is not None:
             self.outcome_tracker.check_candle(df.iloc[-1], df.index[-1])

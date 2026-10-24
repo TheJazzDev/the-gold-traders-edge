@@ -269,6 +269,51 @@ Expect a few gold mismatches like this. They aren't parity bugs.
 
 ---
 
+## 2026-10-24 — ARLB stop rule, and logging live's candles
+
+**Why:** live ARLB reached 1W/11L (−9R) after 10-19 to 10-23 went 0W/3L.
+FX live and the backtest replay still match trade for trade
+(`live_parity_replay.py --days 14`), so these are the strategy's own losses.
+
+**Is that outside the backtest's range? No.** Both pairs were run together
+on the committed CSVs plus fresh Yahoo data, with live gates and no expiry:
+361 trades, WR 38.8%, +59R.
+
+- 4.3% of 12-trade windows had one win or fewer. The worst were Feb 2024
+  (a 16-loss streak) and Aug–Sep 2025, and both recovered.
+- The backtest's own current streak is 7 losses (the test slice's worst is
+  8). Live's streak since its last TP (10-01) is also 7.
+- Live looks worse than the backtest overall because it missed 4 of the
+  first 5 post-tune winners to the 09-11→09-23 outage and the old 48h expiry.
+
+**Stop rule, fixed now before more results arrive.** Count live ARLB trades
+from both pairs together, in exit order, TP/SL only. Pause ARLB (remove both
+pairs from `enabled_forex_symbols`) if any of these happen:
+
+| Trigger | Threshold | Backtest history (361 trades) | Now |
+|---|---|---|---|
+| Losing streak | 12 in a row | reached once (the 16 in Feb 2024) | 7 |
+| Drawdown from live peak | more than 19R | max ever 19R | 9R |
+| First 30 trades from 2026-10-19 | net below −9R | 5th percentile of 30-trade windows | 3 trades, −3R |
+
+Pausing means re-checking, not abandoning. Re-run the parity replay over
+the losing stretch first. If the backtest did better than live, look for a
+live bug. If it lost the same way, keep ARLB off until a fresh 70/30
+validation on the extended data passes.
+
+**Gold mismatches, corrected.** The 10-19 entry put them down to Yahoo
+revising candles. Closes always match, but highs, lows and ATR move.
+OBR-1015-01 reproduced on 10-19's data and not on 10-24's, so Yahoo
+changed that day's history at least twice. 10-23 11:00 is a 0.1-point
+knife edge on the high. Live's input wasn't kept, so neither can be proven.
+From 2026-10-24, every worker logs the full frame it evaluated (a
+`CANDLES {...}` line, `signals/candle_log.py`), and
+`scripts/replay_logged_candles.py` re-runs the strategy on that input next to
+today's Yahoo data and lists the revised candles. If revisions keep costing
+gold trades, the fix is a steadier gold data source than GC=F.
+
+---
+
 ## Validated, live
 
 ### Order Block Retest
