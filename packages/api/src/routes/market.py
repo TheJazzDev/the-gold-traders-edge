@@ -5,7 +5,17 @@ from typing import Optional
 from fastapi import APIRouter, HTTPException, Query
 from zoneinfo import ZoneInfo
 
+from src.market_symbols import UnknownSymbolError, yahoo_ticker
+
 router = APIRouter(prefix="/v1/market", tags=["market"])
+
+
+def _ticker_or_400(symbol: str) -> str:
+    # Resolved outside the routes' try blocks, which turn every exception into a 500.
+    try:
+        return yahoo_ticker(symbol)
+    except UnknownSymbolError as e:
+        raise HTTPException(status_code=400, detail=str(e))
 
 
 @router.get("/ohlcv")
@@ -25,6 +35,7 @@ async def get_ohlcv(
     Returns:
         OHLCV data
     """
+    ticker_symbol = _ticker_or_400(symbol)
     try:
         import yfinance as yf
 
@@ -52,7 +63,7 @@ async def get_ohlcv(
         period_days = min(period_days, 60)  # Max 60 days for free tier
 
         # Fetch data from Yahoo Finance
-        ticker = yf.Ticker("GC=F")  # Gold futures
+        ticker = yf.Ticker(ticker_symbol)
         data = ticker.history(period=f"{period_days}d", interval=interval)
 
         if data.empty:
@@ -109,10 +120,11 @@ async def get_latest_price(
     Returns:
         Latest price data
     """
+    ticker_symbol = _ticker_or_400(symbol)
     try:
         import yfinance as yf
 
-        ticker = yf.Ticker("GC=F")
+        ticker = yf.Ticker(ticker_symbol)
         data = ticker.history(period="1d", interval="1m")
 
         if data.empty:
