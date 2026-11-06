@@ -26,6 +26,7 @@ from src.models.signal import (
     ServiceStatus,
     PerformanceStats
 )
+from src.admin_auth import require_admin_key
 from src.database import get_db
 from src.worker_status import derive_worker_status
 
@@ -261,7 +262,7 @@ async def get_signal(signal_id: int, db: Session = Depends(get_db)):
     )
 
 
-@router.delete("/{signal_id}")
+@router.delete("/{signal_id}", dependencies=[Depends(require_admin_key)])
 async def delete_signal(signal_id: int, db: Session = Depends(get_db)):
     """
     Permanently delete a signal — for cleaning up a genuine data-entry error

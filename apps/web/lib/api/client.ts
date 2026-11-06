@@ -50,7 +50,8 @@ class APIClient {
   }
 
   async updateSetting(key: string, value: unknown, modifiedBy = "web-app"): Promise<Setting> {
-    const response = await this.client.put(`/v1/settings/${key}`, {
+    // Goes through our own server, which holds the admin key.
+    const response = await axios.put(`/api/settings/${encodeURIComponent(key)}`, {
       value,
       modified_by: modifiedBy,
     });

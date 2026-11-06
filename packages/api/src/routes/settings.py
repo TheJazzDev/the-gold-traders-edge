@@ -23,6 +23,7 @@ from database.settings_models import Setting, SettingCategory
 from database.settings_repository import SettingsRepository
 from sqlalchemy.orm import Session
 
+from src.admin_auth import require_admin_key
 from src.worker_status import derive_worker_status
 from src.strategies_registry import build_strategies_list
 
@@ -245,7 +246,7 @@ async def get_setting(key: str, db: Session = Depends(get_db)):
     )
 
 
-@router.put("/{key}", response_model=SettingResponse)
+@router.put("/{key}", response_model=SettingResponse, dependencies=[Depends(require_admin_key)])
 async def update_setting(
     key: str,
     request: SettingUpdateRequest,
@@ -302,7 +303,7 @@ async def update_setting(
     )
 
 
-@router.put("/bulk/update")
+@router.put("/bulk/update", dependencies=[Depends(require_admin_key)])
 async def bulk_update_settings(
     request: BulkSettingsUpdateRequest,
     db: Session = Depends(get_db)
@@ -358,7 +359,7 @@ async def bulk_update_settings(
     }
 
 
-@router.post("/{key}/reset")
+@router.post("/{key}/reset", dependencies=[Depends(require_admin_key)])
 async def reset_setting_to_default(
     key: str,
     modified_by: str = "admin",
@@ -401,7 +402,7 @@ async def reset_setting_to_default(
     )
 
 
-@router.post("/reset-all")
+@router.post("/reset-all", dependencies=[Depends(require_admin_key)])
 async def reset_all_settings(
     modified_by: str = "admin",
     db: Session = Depends(get_db)
