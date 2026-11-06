@@ -8,7 +8,9 @@ from typing import Optional, Dict, Any
 from datetime import datetime
 from enum import Enum
 
-from .mt5_connection import MT5ConnectionBase, DirectMT5Connection, MetaAPIConnection
+from .broker_levels import align_levels_to_broker
+from .metaapi_connection import MetaAPIConnection
+from .mt5_connection import MT5ConnectionBase, DirectMT5Connection
 from .position_calculator import PositionCalculator
 from .mt5_config import MT5Config
 
@@ -99,6 +101,10 @@ class TradeExecutor:
                 success=False,
                 error_message=f"Could not get symbol info for {symbol}"
             )
+
+        market_price = symbol_info["ask"] if direction == "LONG" else symbol_info["bid"]
+        entry_price, stop_loss, take_profit = align_levels_to_broker(
+            direction, entry_price, stop_loss, take_profit, market_price, symbol_info["digits"])
 
         # Calculate lot size
         lot_size = self.calculator.calculate_lot_size(
@@ -248,45 +254,13 @@ class TradeExecutor:
     ) -> TradeResult:
         """Execute trade via MetaAPI cloud connection"""
         try:
-            connection = self.connection.connection
-
-            # Prepare trade request
-            trade_request = {
-                "actionType": "ORDER_TYPE_BUY" if direction == "LONG" else "ORDER_TYPE_SELL",
-                "symbol": symbol,
-                "volume": lot_size,
-                "stopLoss": stop_loss,
-                "takeProfit": take_profit,
-                "comment": "GoldTrader Signal"
-            }
-
-            logger.info(f"Sending order to MetaAPI: {trade_request}")
-
-            # Execute trade
-            result = connection.create_market_buy_order(**trade_request) \
-                if direction == "LONG" \
-                else connection.create_market_sell_order(**trade_request)
-
-            logger.info(
-                f"Order executed successfully via MetaAPI!\n"
-                f"  Order ID: {result.get('orderId')}\n"
-                f"  Position ID: {result.get('positionId')}"
-            )
-
-            return TradeResult(
-                success=True,
-                ticket=result.get("positionId"),  # MetaAPI uses position ID
-                entry_price=result.get("price"),
-                lot_size=lot_size,
-                order_details=result
-            )
-
+            fill = self.connection.market_order(symbol, direction, lot_size, stop_loss, take_profit)
         except Exception as e:
-            logger.error(f"Error executing MetaAPI order: {e}")
-            return TradeResult(
-                success=False,
-                error_message=str(e)
-            )
+            logger.error(f"MetaAPI order failed: {e}")
+            return TradeResult(success=False, error_message=str(e))
+
+        return TradeResult(success=True, ticket=fill["ticket"], entry_price=fill["entry_price"],
+                           lot_size=lot_size, order_details=fill)
 
     def close_position(
         self,

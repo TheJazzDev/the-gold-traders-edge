@@ -36,6 +36,7 @@ class MT5Config:
 
     # Trading symbol
     symbol: str = "XAUUSD"
+    symbol_suffix: str = ""  # broker naming, e.g. XAUUSD.r
 
     # Risk management
     max_risk_per_trade: float = 0.02  # 2%
@@ -79,6 +80,7 @@ class MT5Config:
 
             # Symbol
             symbol=os.getenv("MT5_SYMBOL", "XAUUSD"),
+            symbol_suffix=os.getenv("MT5_SYMBOL_SUFFIX", ""),
 
             # Risk management
             max_risk_per_trade=float(os.getenv("MAX_RISK_PER_TRADE", "0.02")),

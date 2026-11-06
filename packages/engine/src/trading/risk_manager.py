@@ -4,6 +4,7 @@ Enforces risk management rules before trade execution
 """
 
 import logging
+import threading
 from typing import Optional, List, Dict, Any, Tuple
 from datetime import datetime, timedelta
 from dataclasses import dataclass
@@ -33,6 +34,8 @@ class RiskManager:
         self.config = config
         self.daily_stats: Dict[str, DailyStats] = {}
         self.current_positions: List[Dict[str, Any]] = []
+        self._balance_day: Optional[str] = None
+        self._day_start_balance = 0.0
         self.initial_balance: Optional[float] = None
 
     def set_initial_balance(self, balance: float):
@@ -102,11 +105,27 @@ class RiskManager:
             f"Risk check PASSED:\n"
             f"  Current positions: {len(self.current_positions)}/{self.config.max_positions}\n"
             f"  Proposed risk: ${proposed_risk:.2f} ({risk_pct*100:.2f}%)\n"
-            f"  Daily P&L: ${stats.total_pnl:.2f if today in self.daily_stats else 0:.2f}\n"
+            f"  Daily P&L: ${self.daily_stats[today].total_pnl if today in self.daily_stats else 0:.2f}\n"
             f"  Account balance: ${account_balance:.2f}"
         )
 
         return True, None
+
+    def sync_with_broker(self, balance: float, open_tickets: Optional[List[int]]):
+        """Match the broker's truth: stops and targets close positions there,
+        and a restart loses this object's memory of them. The day's P&L comes
+        from the balance, so it counts every closed trade."""
+        today = datetime.now().date().isoformat()
+        if self._balance_day != today:
+            self._balance_day, self._day_start_balance = today, balance
+        stats = self.daily_stats.setdefault(today, DailyStats(date=datetime.now()))
+        stats.total_pnl = balance - self._day_start_balance
+
+        if open_tickets is None:
+            return
+        known = {p["ticket"] for p in self.current_positions}
+        self.current_positions = [p for p in self.current_positions if p["ticket"] in open_tickets]
+        self.current_positions += [{"ticket": t} for t in open_tickets if t not in known]
 
     def register_position_opened(
         self,
@@ -375,3 +394,16 @@ class RiskManager:
             "losses_today": today_stats.losing_trades,
             "can_trade": not self.is_daily_limit_reached(),
         }
+
+
+_shared_risk_manager: Optional[RiskManager] = None
+_shared_lock = threading.Lock()
+
+
+def get_shared_risk_manager(config) -> RiskManager:
+    """One set of limits across all workers: they trade one account."""
+    global _shared_risk_manager
+    with _shared_lock:
+        if _shared_risk_manager is None:
+            _shared_risk_manager = RiskManager(config)
+        return _shared_risk_manager

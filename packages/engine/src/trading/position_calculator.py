@@ -73,7 +73,7 @@ class PositionCalculator:
 
         # Round to symbol's volume step
         volume_step = symbol_info["volume_step"]
-        lot_size = round(lot_size / volume_step) * volume_step
+        lot_size = round(round(lot_size / volume_step) * volume_step, 8)
 
         # Ensure within min/max volume
         volume_min = symbol_info["volume_min"]
@@ -175,7 +175,7 @@ class PositionCalculator:
 
         # Check if lot size is multiple of volume step
         volume_step = symbol_info["volume_step"]
-        if lot_size % volume_step != 0:
+        if abs(lot_size / volume_step - round(lot_size / volume_step)) > 1e-6:
             return False, f"Lot size must be multiple of {volume_step}"
 
         # Check margin requirement

@@ -4,13 +4,18 @@ Handles connection to MetaTrader 5 terminal (direct or via MetaAPI cloud)
 """
 
 import logging
+import threading
 import time
 from abc import ABC, abstractmethod
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, List
 from datetime import datetime
 from .mt5_config import MT5Config, MT5ConnectionType
 
 logger = logging.getLogger(__name__)
+
+# One broker connection per account, shared by every worker.
+_metaapi_connections: Dict[str, 'MT5ConnectionBase'] = {}
+_metaapi_lock = threading.Lock()
 
 
 class MT5ConnectionBase(ABC):
@@ -41,6 +46,10 @@ class MT5ConnectionBase(ABC):
     def get_account_info(self) -> Optional[Dict[str, Any]]:
         """Get account information"""
         pass
+
+    def open_position_tickets(self) -> Optional[List[int]]:
+        """Open positions at the broker; None where that can't be read."""
+        return None
 
     @abstractmethod
     def get_symbol_info(self, symbol: str) -> Optional[Dict[str, Any]]:
@@ -213,171 +222,6 @@ class DirectMT5Connection(MT5ConnectionBase):
             return None
 
 
-class MetaAPIConnection(MT5ConnectionBase):
-    """Cloud-based MT5 connection via MetaAPI (cross-platform)"""
-
-    def __init__(self, config: MT5Config):
-        super().__init__(config)
-        self.api = None
-        self.account = None
-        self.connection = None
-
-    def connect(self) -> bool:
-        """Connect to MT5 via MetaAPI cloud (synchronous wrapper)"""
-        import asyncio
-
-        try:
-            # Create event loop if none exists
-            try:
-                loop = asyncio.get_event_loop()
-            except RuntimeError:
-                loop = asyncio.new_event_loop()
-                asyncio.set_event_loop(loop)
-
-            # Run async connection
-            return loop.run_until_complete(self._async_connect())
-
-        except Exception as e:
-            logger.error(f"Error in connect: {e}")
-            return False
-
-    async def _async_connect(self) -> bool:
-        """Async connection to MetaAPI"""
-        try:
-            from metaapi_cloud_sdk import MetaApi
-
-            logger.info("Initializing MetaAPI connection...")
-
-            self.api = MetaApi(self.config.metaapi_token)
-            self.account = await self.api.metatrader_account_api.get_account(
-                self.config.metaapi_account_id
-            )
-
-            logger.info(f"Deploying account {self.config.metaapi_account_id}...")
-            await self.account.deploy()
-
-            logger.info("Waiting for API server to connect...")
-            await self.account.wait_connected()
-
-            logger.info("Connecting to MetaAPI RPC...")
-            self.connection = self.account.get_rpc_connection()
-            await self.connection.connect()
-            await self.connection.wait_synchronized()
-
-            self.connected = True
-            self.last_heartbeat = datetime.now()
-
-            # Get account info
-            account_info = await self.connection.get_account_information()
-            logger.info(f"Connected to MetaAPI account: {account_info['login']}")
-            logger.info(f"Account balance: ${account_info['balance']:.2f}")
-            logger.info(f"Account leverage: 1:{account_info['leverage']}")
-
-            return True
-
-        except ImportError:
-            logger.error(
-                "MetaAPI SDK not installed. "
-                "Install with: pip install metaapi-cloud-sdk"
-            )
-            return False
-        except Exception as e:
-            logger.error(f"Error connecting to MetaAPI: {e}")
-            return False
-
-    def disconnect(self) -> bool:
-        """Disconnect from MetaAPI"""
-        try:
-            if self.connection:
-                self.connection.close()
-            self.connected = False
-            logger.info("Disconnected from MetaAPI")
-            return True
-        except Exception as e:
-            logger.error(f"Error disconnecting from MetaAPI: {e}")
-            return False
-
-    def is_connected(self) -> bool:
-        """Check if connected to MetaAPI"""
-        if not self.connection or not self.connected:
-            return False
-
-        try:
-            # Try to get account info to verify connection
-            self.connection.get_account_information()
-            return True
-        except:
-            return False
-
-    def get_account_info(self) -> Optional[Dict[str, Any]]:
-        """Get account information from MetaAPI (synchronous wrapper)"""
-        import asyncio
-
-        if not self.is_connected():
-            return None
-
-        try:
-            loop = asyncio.get_event_loop()
-            return loop.run_until_complete(self._async_get_account_info())
-        except Exception as e:
-            logger.error(f"Error in get_account_info: {e}")
-            return None
-
-    async def _async_get_account_info(self) -> Optional[Dict[str, Any]]:
-        """Async get account information"""
-        try:
-            account_info = await self.connection.get_account_information()
-            return {
-                "login": account_info.get("login"),
-                "balance": account_info.get("balance"),
-                "equity": account_info.get("equity"),
-                "margin": account_info.get("margin"),
-                "free_margin": account_info.get("freeMargin"),
-                "margin_level": account_info.get("marginLevel", 0),
-                "leverage": account_info.get("leverage"),
-                "profit": account_info.get("profit"),
-                "currency": account_info.get("currency"),
-            }
-        except Exception as e:
-            logger.error(f"Error getting account info: {e}")
-            return None
-
-    def get_symbol_info(self, symbol: str) -> Optional[Dict[str, Any]]:
-        """Get symbol information from MetaAPI (synchronous wrapper)"""
-        import asyncio
-
-        if not self.is_connected():
-            return None
-
-        try:
-            loop = asyncio.get_event_loop()
-            return loop.run_until_complete(self._async_get_symbol_info(symbol))
-        except Exception as e:
-            logger.error(f"Error in get_symbol_info: {e}")
-            return None
-
-    async def _async_get_symbol_info(self, symbol: str) -> Optional[Dict[str, Any]]:
-        """Async get symbol information"""
-        try:
-            symbol_spec = await self.connection.get_symbol_specification(symbol)
-            symbol_price = await self.connection.get_symbol_price(symbol)
-
-            return {
-                "name": symbol,
-                "bid": symbol_price.get("bid"),
-                "ask": symbol_price.get("ask"),
-                "digits": symbol_spec.get("digits"),
-                "point": 10 ** (-symbol_spec.get("digits")),
-                "trade_contract_size": symbol_spec.get("contractSize"),
-                "volume_min": symbol_spec.get("minVolume"),
-                "volume_max": symbol_spec.get("maxVolume"),
-                "volume_step": symbol_spec.get("volumeStep"),
-            }
-        except Exception as e:
-            logger.error(f"Error getting symbol info: {e}")
-            return None
-
-
 def create_mt5_connection(config: MT5Config) -> MT5ConnectionBase:
     """
     Factory function to create appropriate MT5 connection based on config
@@ -395,6 +239,11 @@ def create_mt5_connection(config: MT5Config) -> MT5ConnectionBase:
         return DirectMT5Connection(config)
     elif config.connection_type == MT5ConnectionType.METAAPI:
         logger.info("Creating MetaAPI cloud connection (cross-platform)")
-        return MetaAPIConnection(config)
+        from .metaapi_connection import MetaAPIConnection
+        with _metaapi_lock:
+            key = config.metaapi_account_id
+            if key not in _metaapi_connections:
+                _metaapi_connections[key] = MetaAPIConnection(config)
+            return _metaapi_connections[key]
     else:
         raise ValueError(f"Unknown connection type: {config.connection_type}")

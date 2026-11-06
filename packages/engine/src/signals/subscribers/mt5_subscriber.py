@@ -24,6 +24,8 @@ from trading.trading_switch import TradingMode
 
 logger = logging.getLogger(__name__)
 
+MAX_TICKET_COLUMN = 2**31 - 1  # signals.mt5_ticket is a 32-bit integer
+
 
 class MT5Subscriber:
     """
@@ -63,7 +65,6 @@ class MT5Subscriber:
         # Initialize components
         self.position_calculator = PositionCalculator(config)
         self.trade_executor = TradeExecutor(connection, config, self.position_calculator)
-        self.signal_repo = SignalRepository(db_manager)
 
         # Statistics
         self.signals_received = 0
@@ -144,6 +145,8 @@ class MT5Subscriber:
 
         account_balance = account_info["balance"]
         account_equity = account_info["equity"]
+
+        self.risk_manager.sync_with_broker(account_balance, self.connection.open_position_tickets())
 
         logger.info(
             f"Account status:\n"
@@ -243,20 +246,7 @@ class MT5Subscriber:
             f"{'='*70}"
         )
 
-        # Find the signal in database (it should have been saved by DatabaseSubscriber)
-        with self.db_manager.session_scope() as session:
-            # Get the most recent pending signal for this symbol/timeframe
-            db_signal = self.signal_repo.get_pending_signals(session, limit=1)
-
-            if db_signal:
-                # Mark as executed
-                self.signal_repo.mark_as_executed(
-                    session=session,
-                    signal_id=db_signal[0].id,
-                    mt5_ticket=trade_result.ticket,
-                    actual_entry=trade_result.entry_price
-                )
-                logger.info(f"Database updated: Signal #{db_signal[0].id} marked as executed")
+        self._record_fill(signal, trade_result)
 
         # Register position with risk manager
         self.risk_manager.register_position_opened(
@@ -272,34 +262,44 @@ class MT5Subscriber:
 
         return True
 
-    def _log_rejected_signal(self, signal: 'ValidatedSignal', reason: str):
-        """Log rejected signal to database"""
+    def _open_row(self, session, symbol: str):
+        """The one open signal for this symbol (see signals/open_signal_gate.py)."""
+        rows = SignalRepository(session).get_open_signals(symbol=symbol)
+        return max(rows, key=lambda r: r.id) if rows else None
+
+    def _record_fill(self, signal: 'ValidatedSignal', trade_result):
+        """Never raises: the position is real whatever happens to this write."""
         try:
             with self.db_manager.session_scope() as session:
-                # Find the pending signal
-                pending = self.signal_repo.get_pending_signals(session, limit=1)
-                if pending:
-                    signal_obj = pending[0]
-                    signal_obj.status = SignalStatus.CANCELLED
-                    signal_obj.error_message = f"Risk check failed: {reason}"
-                    session.commit()
-                    logger.info(f"Signal #{signal_obj.id} marked as cancelled in database")
+                row = self._open_row(session, signal.symbol)
+                if row is None:
+                    logger.error(f"No open signal row for filled {signal.symbol}")
+                    return
+                ticket = trade_result.ticket
+                fits = ticket <= MAX_TICKET_COLUMN
+                SignalRepository(session).mark_as_executed(row.id, ticket if fits else None,
+                                                           trade_result.entry_price)
+                if not fits:
+                    row.notes = f"{row.notes or ''} [mt5 ticket {ticket}]".strip()
         except Exception as e:
-            logger.error(f"Error logging rejected signal: {e}")
+            logger.error(f"Could not record fill {trade_result.ticket}: {e}")
+
+    def _note_error(self, signal: 'ValidatedSignal', message: str):
+        """The signal stays open: the strategy's record shouldn't depend on
+        whether an order went through."""
+        try:
+            with self.db_manager.session_scope() as session:
+                row = self._open_row(session, signal.symbol)
+                if row is not None:
+                    row.error_message = message
+        except Exception as e:
+            logger.error(f"Could not record error: {e}")
+
+    def _log_rejected_signal(self, signal: 'ValidatedSignal', reason: str):
+        self._note_error(signal, f"Risk check failed: {reason}")
 
     def _log_failed_execution(self, signal: 'ValidatedSignal', error_message: str):
-        """Log failed execution to database"""
-        try:
-            with self.db_manager.session_scope() as session:
-                pending = self.signal_repo.get_pending_signals(session, limit=1)
-                if pending:
-                    signal_obj = pending[0]
-                    signal_obj.error_message = f"Execution failed: {error_message}"
-                    signal_obj.status = SignalStatus.CANCELLED
-                    session.commit()
-                    logger.info(f"Signal #{signal_obj.id} marked as cancelled (execution failed)")
-        except Exception as e:
-            logger.error(f"Error logging failed execution: {e}")
+        self._note_error(signal, f"Execution failed: {error_message}")
 
     def get_statistics(self) -> dict:
         """Get execution statistics"""

@@ -49,3 +49,6 @@ sqlalchemy>=2.0.0,<2.1  # 2.1 defaults postgresql:// to psycopg v3; we ship psyc
 asyncpg>=0.29.0
 psycopg2-binary>=2.9.9
 alembic>=1.13.0
+
+# Broker connection on Linux (see src/trading/metaapi_connection.py)
+metaapi-cloud-sdk==29.1.1

@@ -41,7 +41,7 @@ from signals.open_signal_gate import make_open_signal_checker
 from analysis.trend_gate import warmup_candles
 from trading.mt5_config import MT5Config
 from trading.mt5_connection import create_mt5_connection
-from trading.risk_manager import RiskManager
+from trading.risk_manager import get_shared_risk_manager
 from trading.trading_switch import make_trading_mode_reader
 from database.connection import DatabaseManager
 from database.models import Base
@@ -418,42 +418,7 @@ class TimeframeWorker:
             console_subscriber = ConsoleSubscriber()
             self.generator.add_subscriber(console_subscriber)
 
-            # MT5 subscriber - auto-trade signals (if enabled)
-            if self.enable_trading and self.mt5_config:
-                logger.info(f"   [{self.timeframe}] Enabling auto-trading via MT5Subscriber...")
-
-                # Create MT5 connection (shared across all timeframes via singleton)
-                self.mt5_connection = create_mt5_connection(self.mt5_config)
-                if not self.mt5_connection.connect():
-                    raise RuntimeError(f"[{self.timeframe}] Failed to connect to MT5")
-
-                # Get account info
-                account_info = self.mt5_connection.get_account_info()
-                logger.info(
-                    f"   [{self.timeframe}] Connected to MT5:\n"
-                    f"      Account: {account_info.get('login', 'N/A')}\n"
-                    f"      Balance: ${account_info.get('balance', 0):.2f}"
-                )
-
-                # Create risk manager
-                self.risk_manager = RiskManager(self.mt5_config)
-                self.risk_manager.set_initial_balance(account_info.get('balance', 0))
-
-                # Create database manager for MT5 subscriber
-                db_manager = DatabaseManager(self.database_url)
-
-                # Add MT5 subscriber
-                mt5_subscriber = MT5Subscriber(
-                    connection=self.mt5_connection,
-                    config=self.mt5_config,
-                    db_manager=db_manager,
-                    risk_manager=self.risk_manager,
-                    trading_mode=make_trading_mode_reader(self.database_url)
-                )
-                self.generator.add_subscriber(mt5_subscriber)
-                logger.info(f"   [{self.timeframe}] ✅ Auto-trading ENABLED")
-            else:
-                logger.info(f"   [{self.timeframe}] Auto-trading DISABLED (signals only)")
+            self._attach_trading()
 
             logger.info(f"   [{self.timeframe}] Generator ready, starting loop...")
 
@@ -464,8 +429,34 @@ class TimeframeWorker:
             logger.error(f"❌ [{self.worker_id}] Worker failed: {e}", exc_info=True)
             self.is_running = False
 
+    def _attach_trading(self):
+        """Send signals to the broker if enabled. A broker problem must never
+        stop the signals, so any failure leaves this worker signals-only."""
+        if not (self.enable_trading and self.mt5_config):
+            logger.info(f"   [{self.timeframe}] Auto-trading DISABLED (signals only)")
+            return
+        try:
+            self.mt5_connection = create_mt5_connection(self.mt5_config)
+            if not self.mt5_connection.connect():
+                raise RuntimeError("could not connect")
+            account_info = self.mt5_connection.get_account_info()
+            self.risk_manager = get_shared_risk_manager(self.mt5_config)
+            self.risk_manager.set_initial_balance(account_info.get('balance', 0))
+            self.generator.add_subscriber(MT5Subscriber(
+                connection=self.mt5_connection,
+                config=self.mt5_config,
+                db_manager=DatabaseManager(self.database_url),
+                risk_manager=self.risk_manager,
+                trading_mode=make_trading_mode_reader(self.database_url),
+            ))
+            logger.info(f"   [{self.timeframe}] ✅ Broker connected, orders follow the dashboard switches")
+        except Exception as e:
+            logger.error(f"❌ [{self.timeframe}] Broker unavailable, signals only: {e}", exc_info=True)
+
 
 class MultiTimeframeService:
+
+
     """
     Main service that manages multiple timeframe workers.
     """

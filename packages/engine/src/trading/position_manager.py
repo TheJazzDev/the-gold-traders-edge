@@ -17,7 +17,8 @@ from database.connection import DatabaseManager
 from database.signal_repository import SignalRepository
 from database.models import SignalStatus
 
-from .mt5_connection import MT5ConnectionBase, DirectMT5Connection, MetaAPIConnection
+from .metaapi_connection import MetaAPIConnection
+from .mt5_connection import MT5ConnectionBase, DirectMT5Connection
 from .risk_manager import RiskManager
 
 logger = logging.getLogger(__name__)
