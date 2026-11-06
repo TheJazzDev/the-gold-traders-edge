@@ -188,7 +188,8 @@ async def get_strategies(db: Session = Depends(get_db)):
             tuned = json.load(f)
         validation_by_symbol['XAUUSD'] = tuned.get('final_shared_config_validation', {})
 
-    forex_config_filenames = {'GBPUSD': 'gbpusd_1h.json', 'EURUSD': 'eurusd_1h.json'}
+    forex_config_filenames = {'GBPUSD': 'gbpusd_1h.json', 'EURUSD': 'eurusd_1h.json',
+                              'USDJPY': 'usdjpy_1h.json'}
     for symbol, filename in forex_config_filenames.items():
         forex_config_path = ENGINE_DIR / 'tuned_configs' / filename
         if forex_config_path.exists():

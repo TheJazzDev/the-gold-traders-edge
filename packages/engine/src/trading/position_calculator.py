@@ -5,6 +5,8 @@ Calculates lot size based on risk percentage and account balance
 
 import logging
 from typing import Optional
+
+from instruments import usd_per_quote
 from .mt5_config import MT5Config, PositionSizeMode
 
 logger = logging.getLogger(__name__)
@@ -22,6 +24,7 @@ class PositionCalculator:
         entry_price: float,
         stop_loss: float,
         symbol_info: dict,
+        symbol: str,
         risk_percentage: Optional[float] = None
     ) -> float:
         """
@@ -32,6 +35,7 @@ class PositionCalculator:
             entry_price: Entry price for the trade
             stop_loss: Stop loss price
             symbol_info: Symbol information from MT5 (digits, point, contract_size, etc.)
+            symbol: Our symbol name, which sets the currency a move is paid in
             risk_percentage: Risk percentage (overrides config if provided)
 
         Returns:
@@ -59,8 +63,8 @@ class PositionCalculator:
 
         # Calculate pip value per lot
         # For XAUUSD: 1 pip = 0.01, contract size = 100
-        # Pip value = (pip size * contract size)
-        pip_value_per_lot = pip_value * contract_size
+        # Pip value = (pip size * contract size), in dollars at the stop
+        pip_value_per_lot = pip_value * contract_size * usd_per_quote(symbol, stop_loss)
 
         # Calculate lot size
         # risk_amount = lot_size * sl_pips * pip_value_per_lot
@@ -99,7 +103,8 @@ class PositionCalculator:
         lot_size: float,
         entry_price: float,
         stop_loss: float,
-        symbol_info: dict
+        symbol_info: dict,
+        symbol: str
     ) -> float:
         """
         Calculate the risk amount for a given lot size
@@ -109,6 +114,7 @@ class PositionCalculator:
             entry_price: Entry price
             stop_loss: Stop loss price
             symbol_info: Symbol information
+            symbol: Our symbol name
 
         Returns:
             float: Risk amount in account currency
@@ -118,7 +124,7 @@ class PositionCalculator:
 
         sl_distance = abs(entry_price - stop_loss)
         sl_pips = sl_distance / pip_value
-        pip_value_per_lot = pip_value * contract_size
+        pip_value_per_lot = pip_value * contract_size * usd_per_quote(symbol, stop_loss)
 
         risk_amount = lot_size * sl_pips * pip_value_per_lot
 
@@ -128,7 +134,8 @@ class PositionCalculator:
         self,
         lot_size: float,
         price: float,
-        symbol_info: dict
+        symbol_info: dict,
+        symbol: str
     ) -> float:
         """
         Calculate the total position value
@@ -137,12 +144,13 @@ class PositionCalculator:
             lot_size: Position size in lots
             price: Current price
             symbol_info: Symbol information
+            symbol: Our symbol name
 
         Returns:
             float: Position value in account currency
         """
         contract_size = symbol_info["trade_contract_size"]
-        position_value = lot_size * contract_size * price
+        position_value = lot_size * contract_size * price * usd_per_quote(symbol, price)
         return position_value
 
     def validate_position_size(
@@ -151,7 +159,8 @@ class PositionCalculator:
         account_balance: float,
         account_leverage: int,
         symbol_info: dict,
-        entry_price: float
+        entry_price: float,
+        symbol: str
     ) -> tuple[bool, Optional[str]]:
         """
         Validate if position size is acceptable
@@ -162,6 +171,7 @@ class PositionCalculator:
             account_leverage: Account leverage
             symbol_info: Symbol information
             entry_price: Entry price
+            symbol: Our symbol name
 
         Returns:
             tuple: (is_valid, error_message)
@@ -180,7 +190,7 @@ class PositionCalculator:
 
         # Check margin requirement
         contract_size = symbol_info["trade_contract_size"]
-        position_value = lot_size * contract_size * entry_price
+        position_value = lot_size * contract_size * entry_price * usd_per_quote(symbol, entry_price)
         required_margin = position_value / account_leverage
 
         if required_margin > account_balance * 0.5:  # Don't use more than 50% margin

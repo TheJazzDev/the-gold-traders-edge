@@ -70,6 +70,9 @@ class WorkerSpec:
     strategy_class: type
     timeframe: str
     tuned_config_filename: str
+    # False keeps a market to signals and tracking: no broker connection, so
+    # no orders, whatever the trading switches say.
+    orders_enabled: bool = True
 
 
 # Only 1H has been re-tuned and validated against real market data for gold
@@ -83,7 +86,9 @@ XAUUSD_1H_SPEC = WorkerSpec(symbol='XAUUSD', strategy_class=GoldStrategy, timefr
 GBPUSD_1H_SPEC = WorkerSpec(symbol='GBPUSD', strategy_class=ForexSessionStrategy, timeframe='1h', tuned_config_filename='gbpusd_1h.json')
 EURUSD_1H_SPEC = WorkerSpec(symbol='EURUSD', strategy_class=ForexSessionStrategy, timeframe='1h', tuned_config_filename='eurusd_1h.json')
 
-WORKER_SPECS = [XAUUSD_1H_SPEC, GBPUSD_1H_SPEC, EURUSD_1H_SPEC]
+# Signals only until the demo order path is proven: strategy-ledger.md, 2026-11-06.
+USDJPY_1H_SPEC = WorkerSpec(symbol='USDJPY', strategy_class=ForexSessionStrategy, timeframe='1h', tuned_config_filename='usdjpy_1h.json', orders_enabled=False)
+WORKER_SPECS = [XAUUSD_1H_SPEC, GBPUSD_1H_SPEC, EURUSD_1H_SPEC, USDJPY_1H_SPEC]
 
 # Only order_block_retest survived shared-config, out-of-sample validation
 # on gold. Every other rule tried (5 legacy + 3 new hypotheses) was ruled
@@ -432,7 +437,7 @@ class TimeframeWorker:
     def _attach_trading(self):
         """Send signals to the broker if enabled. A broker problem must never
         stop the signals, so any failure leaves this worker signals-only."""
-        if not (self.enable_trading and self.mt5_config):
+        if not (self.enable_trading and self.mt5_config and self.spec.orders_enabled):
             logger.info(f"   [{self.timeframe}] Auto-trading DISABLED (signals only)")
             return
         try:

@@ -10,7 +10,7 @@ from strategies_registry import STRATEGY_REGISTRY, build_strategies_list
 
 class TestStrategyRegistry:
     def test_covers_all_three_symbols(self):
-        assert set(STRATEGY_REGISTRY.keys()) == {'XAUUSD', 'GBPUSD', 'EURUSD'}
+        assert set(STRATEGY_REGISTRY.keys()) == {'XAUUSD', 'GBPUSD', 'EURUSD', 'USDJPY'}
 
     def test_gbpusd_and_eurusd_share_the_same_rule_name(self):
         assert STRATEGY_REGISTRY['GBPUSD'] == {'asian_range_london_breakout': 'Asian Range London Breakout'}
@@ -76,4 +76,4 @@ class TestBuildStrategiesList:
             enabled_forex_symbols=[],
             validation_by_symbol={},
         )
-        assert len(result) == 3  # order_block_retest, asian_range_london_breakout x2
+        assert len(result) == 4  # order_block_retest, asian_range_london_breakout x3

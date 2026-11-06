@@ -17,6 +17,7 @@ STRATEGY_REGISTRY: Dict[str, Dict[str, str]] = {
     'XAUUSD': {'order_block_retest': 'Order Block Retest'},
     'GBPUSD': {'asian_range_london_breakout': 'Asian Range London Breakout'},
     'EURUSD': {'asian_range_london_breakout': 'Asian Range London Breakout'},
+    'USDJPY': {'asian_range_london_breakout': 'Asian Range London Breakout'},
 }
 
 

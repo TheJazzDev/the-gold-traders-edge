@@ -16,6 +16,7 @@ from market_symbols import UnknownSymbolError, yahoo_ticker
     ('XAUUSD', 'GC=F'),
     ('EURUSD', 'EURUSD=X'),
     ('GBPUSD', 'GBPUSD=X'),
+    ('USDJPY', 'USDJPY=X'),
 ])
 def test_each_live_symbol_maps_to_its_own_ticker(symbol, ticker):
     assert yahoo_ticker(symbol) == ticker
@@ -27,4 +28,4 @@ def test_symbol_is_case_insensitive():
 
 def test_unknown_symbol_raises_instead_of_falling_back_to_gold():
     with pytest.raises(UnknownSymbolError):
-        yahoo_ticker('USDJPY')
+        yahoo_ticker('CHFJPY')

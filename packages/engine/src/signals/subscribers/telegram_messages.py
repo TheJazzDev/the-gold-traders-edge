@@ -30,8 +30,8 @@ def format_signal_message(signal) -> str:
     risk_pips = price_to_pips(symbol, risk_distance)
     reward_pips = price_to_pips(symbol, reward_distance)
 
-    risk_rows = lot_size_pnl(symbol, -risk_distance)
-    reward_rows = lot_size_pnl(symbol, reward_distance)
+    risk_rows = lot_size_pnl(symbol, -risk_distance, price=signal.stop_loss)
+    reward_rows = lot_size_pnl(symbol, reward_distance, price=signal.take_profit)
     lot_rows = "\n".join(
         f"├ {_lot_line(lots)}: {_money(risk)} / {_money(reward)}"
         for (lots, risk), (_, reward) in zip(risk_rows, reward_rows)
@@ -101,7 +101,7 @@ def format_close_message(
         )
         lot_rows = "\n".join(
             f"├ {_lot_line(lots)}: {_money(pnl)}"
-            for lots, pnl in lot_size_pnl(symbol, move)
+            for lots, pnl in lot_size_pnl(symbol, move, price=exit_price)
         )
         pnl_block = f"\n\n💵 <b>P&amp;L BY LOT SIZE</b>\n{lot_rows}"
 

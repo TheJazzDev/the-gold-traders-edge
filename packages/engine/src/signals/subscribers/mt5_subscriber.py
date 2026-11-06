@@ -166,7 +166,8 @@ class MT5Subscriber:
             account_balance=account_balance,
             entry_price=signal.entry_price,
             stop_loss=signal.stop_loss,
-            symbol_info=symbol_info
+            symbol_info=symbol_info,
+            symbol=signal.symbol
         )
 
         if lot_size <= 0:
@@ -178,7 +179,8 @@ class MT5Subscriber:
             lot_size=lot_size,
             entry_price=signal.entry_price,
             stop_loss=signal.stop_loss,
-            symbol_info=symbol_info
+            symbol_info=symbol_info,
+            symbol=signal.symbol
         )
 
         # RISK MANAGEMENT CHECK

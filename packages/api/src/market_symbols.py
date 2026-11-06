@@ -10,6 +10,7 @@ YAHOO_TICKERS = {
     "XAGUSD": "SI=F",
     "GBPUSD": "GBPUSD=X",
     "EURUSD": "EURUSD=X",
+    "USDJPY": "USDJPY=X",
 }
 
 

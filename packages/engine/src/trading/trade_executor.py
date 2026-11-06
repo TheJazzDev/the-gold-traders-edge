@@ -111,7 +111,8 @@ class TradeExecutor:
             account_balance=account_balance,
             entry_price=entry_price,
             stop_loss=stop_loss,
-            symbol_info=symbol_info
+            symbol_info=symbol_info,
+            symbol=symbol
         )
 
         if lot_size <= 0:
@@ -133,7 +134,8 @@ class TradeExecutor:
             account_balance=account_balance,
             account_leverage=account_info["leverage"],
             symbol_info=symbol_info,
-            entry_price=entry_price
+            entry_price=entry_price,
+            symbol=symbol
         )
 
         if not is_valid:

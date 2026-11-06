@@ -227,7 +227,7 @@ DEFAULT_SETTINGS = [
         'value': '[]',
         'value_type': 'json',
         'default_value': '[]',
-        'description': 'Forex symbols (GBPUSD/EURUSD) whose ForexSessionStrategy rule is live (applied on the next candle close — no restart needed)',
+        'description': 'Forex symbols (GBPUSD/EURUSD/USDJPY) whose ForexSessionStrategy rule is live (applied on the next candle close — no restart needed)',
         'editable': True,
         'requires_restart': False,
     },

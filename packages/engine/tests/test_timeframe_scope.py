@@ -13,4 +13,4 @@ class TestTimeframeScope:
         assert all(spec.timeframe == '1h' for spec in svc_module.WORKER_SPECS)
 
     def test_worker_specs_cover_exactly_these_symbols(self):
-        assert {spec.symbol for spec in svc_module.WORKER_SPECS} == {'XAUUSD', 'GBPUSD', 'EURUSD'}
+        assert {spec.symbol for spec in svc_module.WORKER_SPECS} == {'XAUUSD', 'GBPUSD', 'EURUSD', 'USDJPY'}

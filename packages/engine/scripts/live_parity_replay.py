@@ -33,7 +33,8 @@ from signals.gold_strategy import GoldStrategy  # noqa: E402
 API = 'https://the-gold-traders-edge-production.up.railway.app'
 WORKERS = [('XAUUSD', GoldStrategy, '1h.json'),
            ('GBPUSD', ForexSessionStrategy, 'gbpusd_1h.json'),
-           ('EURUSD', ForexSessionStrategy, 'eurusd_1h.json')]
+           ('EURUSD', ForexSessionStrategy, 'eurusd_1h.json'),
+           ('USDJPY', ForexSessionStrategy, 'usdjpy_1h.json')]
 
 
 def _get(path):

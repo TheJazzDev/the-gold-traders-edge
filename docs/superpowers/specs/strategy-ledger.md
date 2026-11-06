@@ -352,6 +352,42 @@ extended data passes.
 
 ---
 
+## 2026-11-06 — ARLB on USDJPY and AUDUSD
+
+`packages/engine/scripts/new_pair_test.py`. ARLB with EURUSD's exact config and
+live's gates, nothing tuned, pairs chosen before any result. Yahoo 1h from
+2024-01-22; test means entries after 2025-11-05. Mid costs: USDJPY 1.6 pips,
+AUDUSD 1.4 pips. Pass rule, set before the run: test net above 0, under 30% of
+trades sharing a day and USD direction with EURUSD or GBPUSD, and a higher book
+net R / max drawdown.
+
+| Pair | Train | Test | Overlap | Book ratio (test, live 4.10) | Verdict |
+|---|---|---|---|---|---|
+| USDJPY | 62 tr, +20.8R | 31 tr, +13.0R | 23% | 4.77 | ✅ passes |
+| AUDUSD | 60 tr, −5.6R | 42 tr, −5.1R | 60% | 2.79 | ❌ fails all three |
+
+USDJPY across all 93 trades: +33.8R, +0.36R/trade (95% +0.07..+0.66), PF 1.66.
+Every half year was positive, and it stays +23.8R without its best 5 trades.
+All 8 parameter variations stayed profitable (PF 1.28–1.88). Longs +23.6R,
+shorts +10.2R. Rough swap charge leaves +31.6R. Weekly correlation with EURUSD
+0.04, GBPUSD −0.09, gold −0.15. A 1-year simulation of the test slice moves
+from +0.84R/wk, p95 drawdown 23R, to +1.08R/wk, 17.8R.
+
+**Open doubts:** 31 test trades is under the usual ~50 bar, although no trade
+was fitted to USDJPY. The hypothesis is a quiet Asian session, and Tokyo is
+active then, so the result has no clear mechanism. USDJPY has sudden 2-3% hourly
+spikes, one of which hit a stop on 2024-07-11, and fills assume stops execute at
+their level, so a gap would lose more than 1R. Trades are held a median 55h.
+
+**Verdict:** ✅ candidate. Added 2026-11-06 as signals only: the worker's
+`orders_enabled=False` keeps it off the broker whatever the switches say.
+Lot sizing, margin and Telegram P&L now convert yen to dollars. Move it to
+orders only after the demo path is proven and it has a live record.
+`tuned_configs/usdjpy_1h.json` uses the tuner's own 70/30 split, so its PFs
+(train 1.82, test 1.33 on 27 trades) differ from the table above.
+
+---
+
 ## Validated, live
 
 ### Order Block Retest

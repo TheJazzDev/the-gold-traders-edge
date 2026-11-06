@@ -249,6 +249,7 @@ class YahooFinanceDataFeed(RealtimeDataFeed):
             "XAGUSD": "SI=F",     # Silver futures
             "GBPUSD": "GBPUSD=X",
             "EURUSD": "EURUSD=X",
+            "USDJPY": "USDJPY=X",
         }
         self.data_delay_minutes = self.PUBLISH_DELAY_MINUTES.get(self.ticker_map.get(symbol), 0)
 

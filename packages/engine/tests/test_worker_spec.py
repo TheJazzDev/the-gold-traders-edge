@@ -13,7 +13,7 @@ from signals.forex_session_strategy import ForexSessionStrategy
 
 class TestWorkerSpecs:
     def test_worker_specs_has_three_entries(self):
-        assert len(svc_module.WORKER_SPECS) == 3
+        assert len(svc_module.WORKER_SPECS) == 4
 
     def test_xauusd_spec_uses_gold_strategy(self):
         spec = svc_module.XAUUSD_1H_SPEC
@@ -36,11 +36,12 @@ class TestWorkerSpecs:
         assert spec.timeframe == '1h'
         assert spec.tuned_config_filename == 'eurusd_1h.json'
 
-    def test_worker_specs_contains_all_three_in_order(self):
+    def test_worker_specs_contains_all_four_in_order(self):
         assert svc_module.WORKER_SPECS == [
             svc_module.XAUUSD_1H_SPEC,
             svc_module.GBPUSD_1H_SPEC,
             svc_module.EURUSD_1H_SPEC,
+            svc_module.USDJPY_1H_SPEC,
         ]
 
 

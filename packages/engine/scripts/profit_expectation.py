@@ -94,6 +94,7 @@ def replay(symbol):
         risk = abs(t.entry_price - t.stop_loss)
         rows.append({'symbol': symbol, 'entry': str(t.entry_time), 'exit': str(t.exit_time),
                      'r': float(sign * (t.exit_price - t.entry_price) / risk), 'risk': float(risk),
+                     'direction': sign,
                      'oos': bool(t.entry_time >= train_end)})
     return rows
 

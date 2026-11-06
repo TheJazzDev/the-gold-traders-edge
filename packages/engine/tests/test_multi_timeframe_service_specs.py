@@ -40,5 +40,5 @@ class TestMultiTimeframeServiceWorkerSpecs:
             service._monitor_loop = MagicMock()  # don't actually loop forever
             service.start()
 
-        assert set(service.workers.keys()) == {'XAUUSD:1h', 'GBPUSD:1h', 'EURUSD:1h'}
-        assert mock_worker_cls.call_count == 3
+        assert set(service.workers.keys()) == {'XAUUSD:1h', 'GBPUSD:1h', 'EURUSD:1h', 'USDJPY:1h'}
+        assert mock_worker_cls.call_count == 4

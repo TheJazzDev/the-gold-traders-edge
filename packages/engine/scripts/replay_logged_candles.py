@@ -31,7 +31,8 @@ from signals.gold_strategy import GoldStrategy  # noqa: E402
 
 WORKERS = {'XAUUSD': (GoldStrategy, '1h.json'),
            'GBPUSD': (ForexSessionStrategy, 'gbpusd_1h.json'),
-           'EURUSD': (ForexSessionStrategy, 'eurusd_1h.json')}
+           'EURUSD': (ForexSessionStrategy, 'eurusd_1h.json'),
+           'USDJPY': (ForexSessionStrategy, 'usdjpy_1h.json')}
 
 
 def _strategy_func(symbol):
