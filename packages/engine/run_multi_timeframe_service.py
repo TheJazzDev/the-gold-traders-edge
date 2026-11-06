@@ -47,7 +47,7 @@ from database.models import Base
 from database.signal_repository import SignalRepository
 from database.settings_repository import SettingsRepository
 from report import build_report_text
-from services.weekly_parity import ParityTarget, build_weekly_parity_text
+from services.weekly_parity import LIVE_HISTORY_DAYS, ParityTarget, build_weekly_parity_text
 
 # Configure logging
 logging.basicConfig(
@@ -780,7 +780,7 @@ class MultiTimeframeService:
             ]
             db_manager = DatabaseManager(self.database_url)
             with db_manager.session_scope() as session:
-                live_signals = SignalRepository(session).get_recent(days=7, limit=1000)
+                live_signals = SignalRepository(session).get_recent(days=LIVE_HISTORY_DAYS, limit=1000)
                 return build_weekly_parity_text(targets, live_signals, _fetch_parity_candles, days=7)
         except Exception as e:
             logger.error(f"Failed to build parity section: {e}", exc_info=True)

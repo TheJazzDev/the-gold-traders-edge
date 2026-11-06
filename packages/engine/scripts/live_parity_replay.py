@@ -63,7 +63,11 @@ def _targets(settings):
 
 def _live_signals():
     rows = _get('/v1/signals/?limit=1000')['signals']
-    return [SimpleNamespace(**{**r, 'timestamp': datetime.fromisoformat(r['timestamp'])}) for r in rows]
+    return [SimpleNamespace(**{
+        **r,
+        'timestamp': datetime.fromisoformat(r['timestamp']),
+        'closed_at': datetime.fromisoformat(r['closed_at']) if r['closed_at'] else None,
+    }) for r in rows]
 
 
 def _fetch(target, count):

@@ -42,9 +42,9 @@ is a **real, published** signal from the production API
 |---|---|---|---|
 | 21 days | EURUSD | +1.0R (3) | +1.0R (3) ✅ |
 | 21 days | GBPUSD | +4.0R (6) | +4.0R (6) ✅ |
-| 21 days | XAUUSD | −3.0R (7) | −1.0R (8) ⚠️ |
+| 21 days | XAUUSD | −3.0R (7) | −3.0R (7) ✅ |
 
-Every trade this week matches. Gold's one difference is the 10-19 19:00 short.
+Every trade this week matches. These numbers include the 2026-11-06 window fix (see the 10-30 review).
 
 ## 5. Findings
 
@@ -84,7 +84,7 @@ No trigger hit. Gold's closest limit is drawdown, 6R away.
 
 - No strategy changes on this sample. Check all six stop-rule numbers in every
   weekly review.
-- Fix the parity window so trades already open at its start are counted. Until
-  then, use `--days 21` or check any FX "backtest only" line by widening the window.
+- ~~Fix the parity window so trades already open at its start are counted~~ Fixed
+  2026-11-06. Any window length can now be used.
 - Update this review if the three open trades resolve in a way that changes the
   week's totals.

@@ -40,17 +40,21 @@ ended. Every signal is a **real, published** signal from the production API
 |---|---|---|---|
 | 21 days | EURUSD | +1.0R (3) | +1.0R (3) ✅ |
 | 21 days | GBPUSD | +4.0R (6) | +4.0R (6) ✅ |
-| 21 days | XAUUSD | −3.0R (7) | −1.0R (8) ⚠️ |
+| 21 days | XAUUSD | −3.0R (7) | −3.0R (7) ✅ |
 
-The 21 days cover this whole week. Every trade in it matches. Gold's one
-difference is the 10-19 19:00 short, from the week before (see the 10-24 ledger
+The 21 days cover this whole week, and every trade in it matches. These are the
+numbers after the fix below. Before it, gold showed −1.0R (8), with the 10-19 19:00
+short as backtest only. That short was blocked by OBR-1015-01, which opened before
+the 21-day window, so it now drops out. `--days 28` matches all 11 gold trades on
+today's data, including OBR-1015-01. That trade did not reproduce on 10-24's data,
+so Yahoo's history for that day appears to have changed again (see the 10-24 ledger
 entry).
 
-**False alarm in a shorter window.** `--days 14` reports EURUSD and GBPUSD shorts
-on 10-26 07:00 as "backtest only (TP)", worth +4R. Live did not miss them. The
-14-day replay starts after the 10-23 trades opened, so it doesn't know they were
-still open on 10-26. With those trades in the window (`--days 21`), the replay
-takes no 10-26 trade either, as live didn't.
+**False alarm, fixed the same day.** `--days 14` first reported EURUSD and GBPUSD
+shorts on 10-26 07:00 as "backtest only (TP)", worth +4R. Live did not miss them.
+The replay started after the 10-23 trades opened, so it didn't know they were still
+open on 10-26. The replay now waits for any live trade carried into its window, and
+`--days 14` shows no FX mismatch.
 
 ## 5. Findings
 
@@ -84,5 +88,5 @@ No trigger hit.
 ## 8. Follow-ups
 
 - No strategy changes on this sample.
-- The parity window's blind spot for trades already open at its start is still
-  open. It can put a false warning in the weekly report.
+- ~~Fix the parity window's blind spot for trades already open at its start~~
+  Fixed 2026-11-06 in `services/weekly_parity.py`.

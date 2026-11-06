@@ -76,8 +76,10 @@ def replay_outcomes(symbol: str, df: pd.DataFrame, strategy_func: StrategyFunc,
                     start: pd.Timestamp, warmup: int,
                     expiry_hours: Optional[float]) -> List[TradeOutcome]:
     """Backtest df from `start` (with `warmup` candles of history) under live's gates and expiry."""
-    first = df.index[df.index >= start][0]
-    result = run_on_window(df, first, strategy_func, warmup=warmup, expiry_hours=expiry_hours)
+    candles = df.index[df.index >= start]
+    if len(candles) == 0:
+        return []
+    result = run_on_window(df, candles[0], strategy_func, warmup=warmup, expiry_hours=expiry_hours)
 
     outcomes = []
     for trade in result.trades:
