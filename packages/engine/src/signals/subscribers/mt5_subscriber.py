@@ -6,7 +6,7 @@ Automatically executes trades when signals are generated
 import logging
 import sys
 from pathlib import Path
-from typing import Optional
+from typing import Callable, Optional
 
 # Add paths for imports
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
@@ -20,6 +20,7 @@ from trading.trade_executor import TradeExecutor
 from trading.risk_manager import RiskManager
 from trading.position_calculator import PositionCalculator
 from trading.mt5_config import MT5Config
+from trading.trading_switch import TradingMode
 
 logger = logging.getLogger(__name__)
 
@@ -38,7 +39,8 @@ class MT5Subscriber:
         config: MT5Config,
         db_manager: DatabaseManager,
         risk_manager: RiskManager,
-        dry_run: bool = False
+        dry_run: bool = False,
+        trading_mode: Callable[[], TradingMode] = lambda: TradingMode.OFF
     ):
         """
         Initialize MT5 subscriber
@@ -49,12 +51,14 @@ class MT5Subscriber:
             db_manager: Database manager
             risk_manager: Risk manager instance
             dry_run: If True, log trades but don't execute them (for testing)
+            trading_mode: Read before each signal (see trading/trading_switch.py)
         """
         self.connection = connection
         self.config = config
         self.db_manager = db_manager
         self.risk_manager = risk_manager
         self.dry_run = dry_run
+        self.trading_mode = trading_mode
 
         # Initialize components
         self.position_calculator = PositionCalculator(config)
@@ -122,6 +126,11 @@ class MT5Subscriber:
         Returns:
             bool: True if executed successfully
         """
+        mode = self.trading_mode()
+        if mode is TradingMode.OFF:
+            logger.info(f"Trading is OFF: no order for {signal.symbol}")
+            return False
+
         # Check if connection is alive
         if not self.connection.is_connected():
             logger.error("MT5 connection is not active")
@@ -184,7 +193,7 @@ class MT5Subscriber:
         logger.info(f"✅ RISK CHECK PASSED - Proceeding with execution")
 
         # DRY RUN MODE - Don't actually execute
-        if self.dry_run:
+        if self.dry_run or mode is TradingMode.DRY_RUN:
             logger.info(
                 f"\n{'='*70}\n"
                 f"🧪 DRY RUN MODE - Trade NOT executed\n"

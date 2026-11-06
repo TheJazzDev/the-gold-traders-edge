@@ -42,6 +42,7 @@ from analysis.trend_gate import warmup_candles
 from trading.mt5_config import MT5Config
 from trading.mt5_connection import create_mt5_connection
 from trading.risk_manager import RiskManager
+from trading.trading_switch import make_trading_mode_reader
 from database.connection import DatabaseManager
 from database.models import Base
 from database.signal_repository import SignalRepository
@@ -447,7 +448,7 @@ class TimeframeWorker:
                     config=self.mt5_config,
                     db_manager=db_manager,
                     risk_manager=self.risk_manager,
-                    dry_run=False  # Set to True for testing without executing trades
+                    trading_mode=make_trading_mode_reader(self.database_url)
                 )
                 self.generator.add_subscriber(mt5_subscriber)
                 logger.info(f"   [{self.timeframe}] ✅ Auto-trading ENABLED")
