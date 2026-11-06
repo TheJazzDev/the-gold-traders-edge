@@ -314,6 +314,44 @@ gold trades, the fix is a steadier gold data source than GC=F.
 
 ---
 
+## 2026-11-06 — Gold stop rule
+
+**Why:** gold is 6W/19L, −7R across all live trades, and 3W/10L, −4R since the
+parity fix (2026-10-03). Today's replay of that period is 3W/9L, −3R, so data
+problems no longer explain it. ARLB has had a stop rule since 10-24; gold had none.
+
+**Is that outside the backtest's range? Not yet.** The live OBR config was run
+with live gates and the 143-market-hour expiry on the committed CSV plus fresh
+Yahoo data (`scripts/gold_stop_rule_stats.py`, nothing swept): 265 trades, WR
+38.5%, +41R. Train is 160 trades, +20R. Test plus fresh data is 105 trades, +21R.
+
+- A 13-trade window at −4R or worse: 14% of windows.
+- A 25-trade window at −7R or worse: 8.7% of windows.
+- At 2R, gold needs a win rate of about 33% to break even. Live's 24% is below
+  that, on only 25 trades.
+
+**Stop rule, set the same way as ARLB's.** Count live gold trades in exit order,
+TP/SL only. Pause gold (remove `order_block_retest` from `enabled_strategies`) if
+any of these happen:
+
+| Trigger | Threshold | Backtest history (265 trades) | Now |
+|---|---|---|---|
+| Losing streak | 9 in a row | never; worst is 8, reached twice | 2 |
+| Drawdown from live peak | more than 16R | max ever 16R (train; test max 7R) | 10R |
+| First 30 trades from 2026-10-03 | net below −9R | 5th percentile of 30-trade windows | 13 trades, −4R |
+
+**This rule was set after seeing the losses.** Gold is already 13 trades into the
+30-trade count, and 10R into the drawdown. The start date is the parity fix
+because that's when live began matching the backtest. It wasn't chosen to flatter
+the result: the losses since then all count.
+
+Pausing means re-checking, not abandoning, as with ARLB. Re-run the parity replay
+over the losing stretch. If the backtest did better than live, look for a live bug.
+If it lost the same way, keep gold off until a fresh 70/30 validation on the
+extended data passes.
+
+---
+
 ## Validated, live
 
 ### Order Block Retest
@@ -328,6 +366,7 @@ gold trades, the fix is a steadier gold data source than GC=F.
   slice is PF 1.48 / 140 trades / 43.6% win rate, and PF 1.57 / 83 trades /
   44.6% with the new re-entry cooldown. The HTF trend gate failed (PF 1.33). See
   the 2026-09-25 entry above.
+- **2026-11-06:** live stop rule set. See the 2026-11-06 entry above.
 
 ---
 
