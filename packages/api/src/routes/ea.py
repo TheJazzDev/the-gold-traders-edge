@@ -27,6 +27,21 @@ router = APIRouter(prefix="/v1/ea", tags=["ea"], dependencies=[Depends(require_e
 
 # Last poll, kept in memory: enough to tell whether the terminal is online.
 _last_poll: dict = {}
+# When each terminal last polled, by its label.
+_last_seen: dict = {}
+
+
+def last_seen_of(terminal: str) -> Optional[datetime]:
+    return _last_seen.get(terminal)
+
+
+def trading_is_live() -> bool:
+    from src.database.connection import SessionLocal
+    session = SessionLocal()
+    try:
+        return ea_orders.read_trading_mode(session).value == "live"
+    finally:
+        session.close()
 
 # Which terminal was first offered each signal. Two terminals on one account
 # (say a laptop and a server) must never both place the same order. Kept in
@@ -83,6 +98,7 @@ def poll(body: PollRequest, db: Session = Depends(get_db)) -> str:
     now = datetime.utcnow()
     _last_poll.clear()
     _last_poll.update(body.model_dump(), at=now.isoformat() + "Z")
+    _last_seen[body.terminal or ""] = now
     mode = ea_orders.read_trading_mode(db)
     orders = [order for order in ea_orders.pending_orders(db, mode, now)
               if _offered_to(order.signal_id, body.terminal or "")]
@@ -116,6 +132,7 @@ def status(db: Session = Depends(get_db)) -> dict:
         "risk_per_trade": ea_orders.risk_per_trade(),
         "order_symbols": list(ea_orders.order_symbols()),
         "last_poll": dict(_last_poll) or None,
+        "terminals": {name or "(unnamed)": at.isoformat() + "Z" for name, at in _last_seen.items()},
         "fills": [
             {
                 "signal_id": f.signal_id, "ticket": f.ticket, "broker_symbol": f.broker_symbol,

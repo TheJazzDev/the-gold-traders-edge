@@ -15,6 +15,8 @@ from src.database import init_db
 from src.routes import signals_router, analytics_router, market_router
 from src.routes.settings import router as settings_router
 from src.routes.ea import router as ea_router
+from src.routes import ea as ea_routes
+from src import ea_watchdog
 
 app = FastAPI(
     title="Gold Trader's Edge API",
@@ -51,6 +53,7 @@ app.include_router(ea_router)
 async def startup_event():
     """Initialize database connection on startup"""
     init_db()
+    ea_watchdog.start(ea_routes.last_seen_of, ea_routes.trading_is_live)
 
 
 @app.get("/", response_class=HTMLResponse)
