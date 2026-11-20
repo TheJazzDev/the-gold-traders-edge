@@ -6,12 +6,17 @@
 #ifndef GTE_HTTP_MQH
 #define GTE_HTTP_MQH
 
+#include "GteBridge.mqh"
+
 #define GTE_HTTP_TIMEOUT_MS 8000
 #define GTE_ERR_URL_NOT_ALLOWED 4014
 
 // Returns the HTTP status, or -1 when the request never left the terminal.
 int GtePost(const string path, const string json, string &response)
   {
+   if(InpBridgeFolder != "")
+      return GteBridgePost(InpBridgeFolder, path, json, GTE_HTTP_TIMEOUT_MS, response);
+
    char body[];
    char result[];
    string resultHeaders;

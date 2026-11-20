@@ -11,13 +11,26 @@ MT5 on Wine is not an official setup. Watch `GET /v1/ea/status` on the API:
 
 | Step | File |
 |---|---|
-| Installs Wine and MT5 at build time | `Dockerfile`, `install-mt5.sh` |
+| Installs Wine and unpacks the MT5 program files | `Dockerfile`, `install-mt5.sh` |
 | Compiles the EA; the build fails if it does not compile | `build-ea.sh` |
-| Writes the login, EA inputs and allowed web address at start | `write-config.sh` |
+| Writes the login and EA inputs at start | `write-config.sh` |
 | Starts MT5 on a virtual screen with the EA on one chart | `entrypoint.sh` |
+| Sends the EA's requests to the API | `bridge.sh` |
 | Copies the terminal's and the EA's logs to the container output | `tail-logs.sh` |
 
 When MT5 stops, the container exits and Railway starts a new one.
+
+## Build and deploy
+
+```
+sh packages/mt5-terminal/make-vendor.sh   # once, and again for a newer MT5 build
+sh packages/mt5-terminal/deploy.sh
+```
+
+The service is not linked to GitHub. `make-vendor.sh` packs the MT5 program
+files from a Mac install into `vendor/mt5.tar.gz` (not in the repository), and
+`deploy.sh` uploads that with the EA sources. MetaQuotes' own installer hangs
+in Railway's builder, which is why the files are packed from a desktop.
 
 ## Railway service settings
 
@@ -34,15 +47,21 @@ When MT5 stops, the container exits and Railway starts a new one.
 Attach a volume at `/data`. It keeps the EA's memory of which signals it
 already placed.
 
-## Two files copied from a desktop terminal
+## Things that did not work, and what is used instead
 
-- `servers.dat` is the broker server list, so the terminal can find the
-  broker's servers by name. Refresh it from `config/servers.dat` when moving
-  to a broker the desktop terminal has since logged in to.
-- `webrequest.blob` is the allowed-address list for `WebRequest`. MT5 stores it
-  encrypted, so it cannot be written as text. To change it, add the address in
-  a desktop terminal (Tools > Options > Expert Advisors) and copy the
-  `WebRequestUrl=` value from `config/common.ini`.
+- **WebRequest.** MT5 stores its allowed-address list encrypted per machine, so
+  it cannot be copied in or written as text. The EA runs with
+  `InpBridgeFolder` set: it writes each request to a file and `bridge.sh`
+  sends it with curl. The real EA key stays with `bridge.sh`.
+- **32-bit Wine.** Railway cannot run 32-bit Linux programs. `WINEARCH=wow64`
+  makes Wine work without them.
+- **Paths with spaces** in `/config:`. The start config lives at `C:\gte-start.ini`.
+- **`Enabled=0`** under `[Experts]` stops EAs from running at all. Trading is
+  switched with `AllowLiveTrading` instead.
+
+`servers.dat` is the broker server list from a desktop terminal, so the
+terminal can find the broker's servers by name. Refresh it from
+`config/servers.dat` when moving to a broker the desktop has since logged in to.
 
 ## Never two terminals trading one account
 

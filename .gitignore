@@ -104,3 +104,4 @@ secrets/
 
 # superpowers subagent-driven-development scratch workspace
 .superpowers/
+packages/mt5-terminal/vendor/

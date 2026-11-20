@@ -11,7 +11,7 @@ Xvfb :99 -screen 0 1024x768x24 -nolisten tcp &
 sleep 2
 
 cd "$MT5_DIR"
-wine metaeditor64.exe /portable \
+timeout 300 wine metaeditor64.exe /portable \
   '/compile:MQL5\Experts\GoldTradersEdge\GoldTradersEdge.mq5' /log || true
 wineserver -w || true
 

@@ -21,6 +21,7 @@ input int    InpPollSeconds = 5;            // How often to ask for orders
 input long   InpMagic = 20261120;           // Marks this EA's trades
 input bool   InpAllowLiveAccount = false;   // Must be true to trade a non-demo account
 input string InpLabel = "";                 // Name of this terminal, e.g. "railway"
+input string InpBridgeFolder = "";          // Server only: send requests through files in this folder
 
 #include "GteHttp.mqh"
 #include "GteState.mqh"

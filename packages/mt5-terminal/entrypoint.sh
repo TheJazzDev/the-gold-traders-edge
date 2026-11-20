@@ -12,8 +12,9 @@ if [ ! -L "$MT5_DIR/Bases" ]; then
   ln -s /data/Bases "$MT5_DIR/Bases"
 fi
 
+# Start from the terminal's default charts, so a restart never leaves a
+# second copy of the EA on an old chart.
 rm -rf "$MT5_DIR/MQL5/Profiles/Charts"
-tar -C "$MT5_DIR/MQL5/Profiles" -xf /gte/charts.tar
 
 sh /gte/write-config.sh
 
@@ -21,12 +22,13 @@ rm -f /tmp/.X99-lock /tmp/.X11-unix/X99
 Xvfb :99 -screen 0 1024x768x24 -nolisten tcp &
 sleep 2
 sh /gte/tail-logs.sh &
+sh /gte/bridge.sh &
 
 trap 'wineserver -k 15 || true; exit 0' TERM INT
 
 echo "[gte] starting MT5 for account $MT5_LOGIN on $MT5_SERVER, algo trading ${MT5_ALGO_TRADING:-0}"
 cd "$MT5_DIR"
-wine terminal64.exe /portable '/config:C:\Program Files\MetaTrader 5\config\gte-start.ini' &
+wine terminal64.exe /portable '/config:C:\gte-start.ini' &
 wait $! || true
 wineserver -w || true
 echo "[gte] MT5 stopped"
