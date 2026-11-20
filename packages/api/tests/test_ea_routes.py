@@ -15,6 +15,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from src.database import get_db
 from src.ea_auth import EA_KEY_ENV
+from src.routes import ea as ea_routes
 from src.routes.ea import router as ea_router
 
 from database.models import Base, Signal, SignalDirection, SignalStatus
@@ -29,6 +30,7 @@ FILL = {'ticket': 555, 'lots': 0.05, 'entry_price': 4010.1, 'stop_loss': 3967.1,
 def db(monkeypatch):
     monkeypatch.setenv(EA_KEY_ENV, 'right')
     monkeypatch.delenv('MAX_RISK_PER_TRADE', raising=False)
+    ea_routes._claims.clear()
     engine = create_engine('sqlite://', connect_args={'check_same_thread': False},
                            poolclass=StaticPool)
     Base.metadata.create_all(engine)
@@ -94,6 +96,18 @@ def test_an_order_is_given_until_it_is_reported_filled(client, db):
     assert client.post(f'/v1/ea/orders/{signal_id}/fill', json=FILL, headers=KEY).json() == {'ok': True}
 
     assert client.post('/v1/ea/poll', json={}, headers=KEY).text == 'MODE|live\nRISK|0.0025\n'
+
+
+def test_only_the_first_terminal_to_ask_is_given_an_order(client, db):
+    _go_live(db)
+    signal_id = _signal(db)
+
+    laptop = client.post('/v1/ea/poll', json={}, headers=KEY).text
+    server = client.post('/v1/ea/poll', json={'terminal': 'railway'}, headers=KEY).text
+    laptop_again = client.post('/v1/ea/poll', json={}, headers=KEY).text
+
+    assert f'ORDER|{signal_id}|' in laptop and f'ORDER|{signal_id}|' in laptop_again
+    assert server == 'MODE|live\nRISK|0.0025\n'
 
 
 def test_a_rejected_order_is_not_given_again(client, db):

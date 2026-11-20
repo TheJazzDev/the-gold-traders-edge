@@ -20,6 +20,7 @@ input int    InpSlippagePoints = 50;        // Most slippage accepted, in points
 input int    InpPollSeconds = 5;            // How often to ask for orders
 input long   InpMagic = 20261120;           // Marks this EA's trades
 input bool   InpAllowLiveAccount = false;   // Must be true to trade a non-demo account
+input string InpLabel = "";                 // Name of this terminal, e.g. "railway"
 
 #include "GteHttp.mqh"
 #include "GteState.mqh"
@@ -61,7 +62,8 @@ void OnTimer()
   {
    GteSendReports();
 
-   string json = "{\"account\":\"" + IntegerToString(AccountInfoInteger(ACCOUNT_LOGIN)) + "\""
+   string json = "{\"terminal\":\"" + GteJsonText(InpLabel) + "\""
+                 + ",\"account\":\"" + IntegerToString(AccountInfoInteger(ACCOUNT_LOGIN)) + "\""
                  + ",\"server\":\"" + GteJsonText(AccountInfoString(ACCOUNT_SERVER)) + "\""
                  + ",\"balance\":" + GteNumber(AccountInfoDouble(ACCOUNT_BALANCE))
                  + ",\"equity\":" + GteNumber(AccountInfoDouble(ACCOUNT_EQUITY))

@@ -28,8 +28,18 @@ router = APIRouter(prefix="/v1/ea", tags=["ea"], dependencies=[Depends(require_e
 # Last poll, kept in memory: enough to tell whether the terminal is online.
 _last_poll: dict = {}
 
+# Which terminal was first offered each signal. Two terminals on one account
+# (say a laptop and a server) must never both place the same order. Kept in
+# memory, which is enough with the single API process we run.
+_claims: dict = {}
+
+
+def _offered_to(signal_id: int, terminal: str) -> bool:
+    return _claims.setdefault(signal_id, terminal) == terminal
+
 
 class PollRequest(BaseModel):
+    terminal: Optional[str] = Field(default=None, max_length=40)
     account: Optional[str] = Field(default=None, max_length=40)
     server: Optional[str] = Field(default=None, max_length=80)
     balance: Optional[float] = None
@@ -74,7 +84,8 @@ def poll(body: PollRequest, db: Session = Depends(get_db)) -> str:
     _last_poll.clear()
     _last_poll.update(body.model_dump(), at=now.isoformat() + "Z")
     mode = ea_orders.read_trading_mode(db)
-    orders = ea_orders.pending_orders(db, mode, now)
+    orders = [order for order in ea_orders.pending_orders(db, mode, now)
+              if _offered_to(order.signal_id, body.terminal or "")]
     return ea_orders.format_poll_response(mode, ea_orders.risk_per_trade(), orders)
 
 

@@ -28,6 +28,7 @@ double GteGet(const string field, const long signalId)
 void GteSet(const string field, const long signalId, const double value)
   {
    GlobalVariableSet(GteKey(field, signalId), value);
+   GlobalVariablesFlush(); // on disk now, so a killed terminal still remembers
   }
 
 void GteForget(const long signalId)
