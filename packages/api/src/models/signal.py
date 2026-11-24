@@ -5,6 +5,22 @@ from typing import Optional, List
 from pydantic import BaseModel, Field
 
 
+class BrokerFillResponse(BaseModel):
+    """What the broker really did with a signal. Kept apart from the paper
+    fields on SignalResponse, which the outcome tracker fills from candles."""
+    ticket: int
+    lots: float
+    entry_price: float
+    stop_loss: float
+    take_profit: float
+    opened_at: datetime
+    exit_price: Optional[float] = None
+    profit: Optional[float] = None  # account currency, after commission and swap
+    close_reason: Optional[str] = None  # sl, tp, manual, other
+    closed_at: Optional[datetime] = None
+    r_multiple: Optional[float] = None  # from the broker's entry, stop and exit
+
+
 class SignalResponse(BaseModel):
     """Single signal response model"""
     id: int
@@ -42,6 +58,9 @@ class SignalResponse(BaseModel):
     error_message: Optional[str] = None
     created_at: datetime
     updated_at: datetime
+
+    # The real order, when the EA placed one
+    broker: Optional[BrokerFillResponse] = None
 
     class Config:
         from_attributes = True  # For SQLAlchemy compatibility

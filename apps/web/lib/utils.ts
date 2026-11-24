@@ -15,6 +15,11 @@ export function formatR(value: number): string {
   return `${value >= 0 ? '+' : ''}${value.toFixed(2)}R`;
 }
 
+/** Broker results are real account money, unlike the paper R figures. */
+export function formatMoney(value: number): string {
+  return `${value >= 0 ? '+' : '-'}$${Math.abs(value).toFixed(2)}`;
+}
+
 export function formatProfitFactor(value: number | null): string {
   return value === null ? '—' : value.toFixed(2);
 }

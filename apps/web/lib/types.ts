@@ -15,6 +15,23 @@ export type SignalStatus =
   | "closed_manual"
   | "cancelled";
 
+/** The real order the EA placed for a signal, as the broker reported it.
+ * Separate from the signal's own outcome fields, which are the paper record. */
+export interface BrokerFill {
+  ticket: number;
+  lots: number;
+  entry_price: number;
+  stop_loss: number;
+  take_profit: number;
+  opened_at: string;
+  exit_price: number | null;
+  /** Account currency, after commission and swap. */
+  profit: number | null;
+  close_reason: string | null;
+  closed_at: string | null;
+  r_multiple: number | null;
+}
+
 export interface Signal {
   id: number;
   reference_id: string | null;
@@ -46,6 +63,8 @@ export interface Signal {
   error_message?: string | null;
   created_at?: string;
   updated_at?: string;
+  /** null when no order was placed for the signal. */
+  broker?: BrokerFill | null;
 }
 
 /** Full detail as returned by GET /v1/signals/{id} — every optional field

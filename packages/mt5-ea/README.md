@@ -45,4 +45,6 @@ Server settings: `MAX_RISK_PER_TRADE` (default 0.0025, refused above 0.02),
    Algo Trading on. The chart shows the mode and the time of the last contact.
 
 `GET /v1/ea/status` (with the `X-EA-Key` header) shows the last poll and the
-latest fills.
+latest fills. Each signal from `GET /v1/signals/{id}` also carries a `broker`
+block with the real fill, exit and profit, and the dashboard's signal dialog
+shows it under the paper outcome.

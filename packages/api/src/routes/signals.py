@@ -27,6 +27,7 @@ from src.models.signal import (
     PerformanceStats
 )
 from src.admin_auth import require_admin_key
+from src.broker_result import broker_fills_for, to_broker_response
 from src.database import get_db
 from src.worker_status import derive_worker_status
 
@@ -174,6 +175,7 @@ async def get_signals(
     signals = query.order_by(desc(Signal.timestamp)).offset(offset).limit(page_size).all()
 
     # Convert to response models
+    fills = broker_fills_for(db, [signal.id for signal in signals])
     signal_responses = []
     for signal in signals:
         signal_responses.append(SignalResponse(
@@ -203,7 +205,8 @@ async def get_signals(
             notes=signal.notes,
             error_message=signal.error_message,
             created_at=signal.created_at,
-            updated_at=signal.updated_at
+            updated_at=signal.updated_at,
+            broker=to_broker_response(fills.get(signal.id), signal.direction.value)
         ))
 
     return SignalList(
@@ -258,7 +261,10 @@ async def get_signal(signal_id: int, db: Session = Depends(get_db)):
         notes=signal.notes,
         error_message=signal.error_message,
         created_at=signal.created_at,
-        updated_at=signal.updated_at
+        updated_at=signal.updated_at,
+        broker=to_broker_response(
+            broker_fills_for(db, [signal.id]).get(signal.id), signal.direction.value
+        )
     )
 
 

@@ -8,6 +8,7 @@ import { Badge } from "@/components/ui/badge";
 import { apiClient } from "@/lib/api/client";
 import { formatPrice, formatR, parseApiDate } from "@/lib/utils";
 import type { SignalDetail } from "@/lib/types";
+import { BrokerFillPanel } from "./broker-fill-panel";
 
 interface SignalDetailDialogProps {
   signalId: number | null;
@@ -125,7 +126,9 @@ export function SignalDetailDialog({ signalId, onOpenChange }: SignalDetailDialo
 
             {isClosed && (
               <div className="rounded-lg border border-white/10 p-3 sm:p-4 space-y-2">
-                <h4 className="text-xs sm:text-sm font-semibold text-white/70">Outcome</h4>
+                <h4 className="text-xs sm:text-sm font-semibold text-white/70">
+                  {signal.broker ? "Paper outcome" : "Outcome"}
+                </h4>
                 <div className="grid grid-cols-2 gap-2 sm:gap-4 text-xs sm:text-sm">
                   <div>
                     <span className="text-gray-400 block">Exit price</span>
@@ -148,6 +151,8 @@ export function SignalDetailDialog({ signalId, onOpenChange }: SignalDetailDialo
                 </div>
               </div>
             )}
+
+            {signal.broker && <BrokerFillPanel symbol={signal.symbol} fill={signal.broker} />}
 
             {signal.notes && (
               <div>
