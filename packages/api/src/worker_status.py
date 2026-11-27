@@ -25,8 +25,6 @@ class WorkerStatus:
     candles_processed: int
     signals_generated: int
     uptime_hours: Optional[float]
-    # Newest candle the worker's data feed returned (naive UTC), if known.
-    latest_candle_time: Optional[datetime] = None
 
 
 def derive_worker_status(
@@ -61,12 +59,9 @@ def derive_worker_status(
     if is_running and start_time_raw:
         uptime_hours = (now - datetime.fromisoformat(start_time_raw)).total_seconds() / 3600
 
-    latest_candle_raw = worker_data.get('latest_candle_time')
-
     return WorkerStatus(
         is_running=is_running,
         candles_processed=worker_data.get('candles_processed', 0),
         signals_generated=worker_data.get('signals_generated', 0),
         uptime_hours=uptime_hours,
-        latest_candle_time=datetime.fromisoformat(latest_candle_raw) if latest_candle_raw else None,
     )
