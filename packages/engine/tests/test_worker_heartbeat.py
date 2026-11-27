@@ -113,6 +113,7 @@ class TestSaveHeartbeat:
             'is_running': True,
             'candles_processed': 80,
             'signals_generated': 1,
+            'latest_candle_time': None,
         }
         assert payload['start_time'] == '2026-01-01T00:00:00'
         assert 'updated_at' in payload
@@ -132,6 +133,7 @@ class TestSaveHeartbeat:
             'is_running': False,
             'candles_processed': 20,
             'signals_generated': 1,
+            'latest_candle_time': None,
         }
 
 

@@ -459,6 +459,12 @@ class TimeframeWorker:
             logger.error(f"❌ [{self.timeframe}] Broker unavailable, signals only: {e}", exc_info=True)
 
 
+def _latest_candle_iso(worker) -> Optional[str]:
+    """The newest candle the worker's feed returned, as ISO text (naive UTC)."""
+    candle_time = getattr(worker.generator, 'latest_candle_time', None) if worker.generator else None
+    return candle_time.isoformat() if candle_time is not None else None
+
+
 class MultiTimeframeService:
 
 
@@ -701,6 +707,7 @@ class MultiTimeframeService:
                         'is_running': worker.is_running,
                         'candles_processed': worker.generator.total_candles_processed if worker.generator else 0,
                         'signals_generated': worker.generator.total_signals_generated if worker.generator else 0,
+                        'latest_candle_time': _latest_candle_iso(worker),
                     }
                     for timeframe, worker in self.workers.items()
                 },

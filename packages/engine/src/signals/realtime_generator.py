@@ -421,6 +421,9 @@ class RealtimeSignalGenerator:
         self.is_running = False
         self.total_candles_processed = 0
         self.total_signals_generated = 0
+        # Newest candle the data feed returned, processed or not. The API's
+        # candle watchdog alerts when this stops moving (see heartbeat).
+        self.latest_candle_time = None
 
     def add_subscriber(self, callback: Callable[[ValidatedSignal], None]):
         """
@@ -528,6 +531,7 @@ class RealtimeSignalGenerator:
             return None
 
         candle_time = df.index[-1]
+        self.latest_candle_time = candle_time
 
         if self.last_processed_candle_getter is not None:
             last_processed = self.last_processed_candle_getter()
