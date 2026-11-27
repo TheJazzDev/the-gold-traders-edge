@@ -398,16 +398,20 @@ async def get_service_status(db: Session = Depends(get_db)):
 
     settings_repo = SettingsRepository(db)
     heartbeat = settings_repo.get('worker_heartbeat', default={}) or {}
-    worker_status = derive_worker_status(heartbeat, worker_id=f"{GOLD_SYMBOL}:{timeframe}", now=datetime.now())
+    latest_candles = settings_repo.get('worker_latest_candles', default={}) or {}
+    worker_status = derive_worker_status(heartbeat, worker_id=f"{GOLD_SYMBOL}:{timeframe}", now=datetime.now(),
+                                         latest_candles=latest_candles)
 
     is_running = worker_status.is_running
-    last_candle_time = latest_signal.created_at if latest_signal else None
+    # The newest candle the gold worker's feed returned. This used to be the
+    # newest signal's created_at, which made a healthy worker look stalled.
+    last_candle_time = worker_status.latest_candle_time
 
     if not heartbeat and latest_signal:
         # No heartbeat has ever been written (e.g. worker never started this
         # deploy) — fall back to the old staleness heuristic rather than
         # just reporting "stopped" outright.
-        time_since_last = datetime.now() - last_candle_time
+        time_since_last = datetime.now() - latest_signal.created_at
         is_running = time_since_last.total_seconds() < (5 * timeframe_hours * 3600)
 
     # Count signals

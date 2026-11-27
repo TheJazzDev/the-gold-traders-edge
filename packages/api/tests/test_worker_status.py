@@ -91,3 +91,23 @@ class TestDeriveWorkerStatus:
 
 def expected_uptime_hours(now, start_time):
     return (now - start_time).total_seconds() / 3600
+
+
+class TestLatestCandleTime:
+    """The status endpoint's last_candle_time is the worker's newest candle
+    (from the worker_latest_candles setting), not the newest signal, which
+    can be days old on a healthy worker."""
+
+    def test_reported_from_the_latest_candles_setting(self):
+        result = derive_worker_status(heartbeat_at(5), worker_id='XAUUSD:1h', now=NOW,
+                                      latest_candles={'XAUUSD:1h': '2026-09-07T20:00:00'})
+        assert result.latest_candle_time == datetime(2026, 9, 7, 20, 0, 0)
+
+    def test_none_when_not_written_yet(self):
+        result = derive_worker_status(heartbeat_at(5), worker_id='XAUUSD:1h', now=NOW)
+        assert result.latest_candle_time is None
+
+    def test_none_for_an_unknown_worker(self):
+        result = derive_worker_status({}, worker_id='XAUUSD:1h', now=NOW,
+                                      latest_candles={'XAUUSD:1h': '2026-09-07T20:00:00'})
+        assert result.latest_candle_time is None

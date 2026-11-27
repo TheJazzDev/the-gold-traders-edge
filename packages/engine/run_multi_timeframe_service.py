@@ -459,6 +459,12 @@ class TimeframeWorker:
             logger.error(f"❌ [{self.timeframe}] Broker unavailable, signals only: {e}", exc_info=True)
 
 
+def _latest_candle_iso(worker) -> Optional[str]:
+    """The newest candle the worker's feed returned, as ISO text (naive UTC)."""
+    candle_time = getattr(worker.generator, 'latest_candle_time', None) if worker.generator else None
+    return candle_time.isoformat() if candle_time is not None else None
+
+
 class MultiTimeframeService:
 
 
@@ -705,11 +711,20 @@ class MultiTimeframeService:
                     for timeframe, worker in self.workers.items()
                 },
             }
+            # Kept out of the heartbeat: a setting value is VARCHAR(500) in
+            # Postgres and the heartbeat is already close to it (a8b214f broke
+            # every heartbeat write by adding this there).
+            latest_candles = {
+                worker_id: _latest_candle_iso(worker) for worker_id, worker in self.workers.items()
+            }
             with self._get_db_manager().session_scope() as session:
                 repo = self._open_settings_repo(session)
                 setting = repo.get_setting('worker_heartbeat')
                 if setting:
                     setting.set_typed_value(payload)
+                candles_setting = repo.get_setting('worker_latest_candles')
+                if candles_setting:
+                    candles_setting.set_typed_value(latest_candles)
         except Exception as e:
             logger.error(f"Failed to persist worker heartbeat: {e}", exc_info=True)
 

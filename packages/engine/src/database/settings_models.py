@@ -354,6 +354,20 @@ DEFAULT_SETTINGS = [
         'requires_restart': False,
     },
     {
+        'key': 'worker_latest_candles',
+        'category': SettingCategory.SYSTEM,
+        'value': '{}',
+        'value_type': 'json',
+        'default_value': '{}',
+        'description': (
+            "Internal: newest candle time (naive UTC) each worker's data feed "
+            "returned, written with the heartbeat. The API's candle watchdog "
+            "alerts on Telegram when one stops moving."
+        ),
+        'editable': False,
+        'requires_restart': False,
+    },
+    {
         'key': 'log_level',
         'category': SettingCategory.SYSTEM,
         'value': 'INFO',
